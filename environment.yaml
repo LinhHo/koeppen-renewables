@@ -1,0 +1,21 @@
+name: koeppen-renewables
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - xarray
+  - rioxarray
+  - numpy
+  - pandas
+  - dask
+  - distributed
+  - netcdf4
+  - zarr
+  - s3fs
+  - click
+  - rasterio
+  - python-dotenv
+  - matplotlib
+  - cartopy
+  - geopandas

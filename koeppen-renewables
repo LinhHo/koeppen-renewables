@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""
+Main executable for the Koeppen renewables processing pipeline.
+
+This script:
+- parses CLI arguments
+- determines the spatial domain (global or user-specified)
+- iterates over 20×20° tiles
+- runs:
+    1) atlas & settlement resampling
+    2) ERA5 variability calculations
+
+This is the ONLY entry point users should run.
+"""
+
+import sys
+from pathlib import Path
+import argparse
+
+# Allow imports from src/ and repo root
+REPO_ROOT = Path(__file__).parent
+sys.path.append(str(REPO_ROOT))
+sys.path.append(str(REPO_ROOT / "src"))
+
+from src.resampling import resample_tile
+from src.process_tiles import generate_tiles, run_variability_for_tile
+from config import (
+    GLOBAL_DOMAIN,
+    TILE_SIZE,
+    REFERENCE_RESOLUTION,
+    PATHS,
+    START_YEAR,
+    END_YEAR,
+)
+
+
+def parse_args():
+    """
+    Parse command-line arguments.
+
+    --global : process full predefined global domain (default)
+    --bounds : process only a user-specified bounding box
+    """
+    parser = argparse.ArgumentParser(
+        description="Koeppen renewable energy potential pipeline"
+    )
+
+    parser.add_argument(
+        "--global",
+        dest="run_global",
+        action="store_true",
+        help="Process the full global domain (default)",
+    )
+
+    parser.add_argument(
+        "--bounds",
+        nargs=4,
+        type=float,
+        metavar=("MINX", "MINY", "MAXX", "MAXY"),
+        help="Process only this bounding box (still tiled)",
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    # -----------------------------
+    # Determine spatial domain
+    # -----------------------------
+    if args.bounds and args.run_global:
+        raise ValueError("Use either --global or --bounds, not both")
+
+    if args.bounds:
+        domain = dict(
+            minx=args.bounds[0],
+            miny=args.bounds[1],
+            maxx=args.bounds[2],
+            maxy=args.bounds[3],
+        )
+        print(f"Running bounded domain: {domain}")
+    else:
+        domain = GLOBAL_DOMAIN
+        print("Running global domain")
+
+    output_dir = REPO_ROOT / "results" / "automatic"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # -----------------------------
+    # Tile processing loop
+    # -----------------------------
+    for tile in generate_tiles(
+        domain["minx"],
+        domain["miny"],
+        domain["maxx"],
+        domain["maxy"],
+        TILE_SIZE,
+    ):
+        print(f"\nProcessing tile {tile}")
+
+        # --- Resampling atlas & demand ---
+        resampled_out = output_dir / (
+            f"resampled_{tile[0]}_{tile[1]}_{tile[2]}_{tile[3]}_{START_YEAR}_{END_YEAR}.nc"
+        )
+
+        ds = resample_tile(tile, PATHS, resolution=REFERENCE_RESOLUTION)
+        ds.to_netcdf(resampled_out)
+
+        # --- ERA5 variability ---
+        run_variability_for_tile(tile, output_dir)
+
+
+if __name__ == "__main__":
+    main()

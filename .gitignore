@@ -1,0 +1,7 @@
+data/
+results/
+*.nc
+*.tif
+*.ipynb
+__pycache__/
+.env
