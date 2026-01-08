@@ -1,59 +1,52 @@
 ## Koeppen Renewable Energy Potential
 
-This repository computes global 20×20° gridded:
+This repository produces renewable zone classification, inspired by Koeppen climate zones. An example is as below.
+
 - Wind and solar power abundance (atlases)
 - Seasonal and weather variability (ERA5)
 - Potential demand (GHSL)
 
 ### Workflow
-1. Resample atlas and settlement data to ERA5 grid
-2. Compute variability metrics using CDO
-3. Process global tiles
+1. Abundance: Resample wind and solar atlas ERA5 grid (0.25° resolution)
+2. Compute variability metrics using ERA5 data
+3. Compute demand potential from ERA5 temperature, human settlement and industrial area data
+4. Process global tiles
 
 ### Usage
 ```bash
-conda env create -f environment.yml
+conda env create -f environment.yaml
 conda activate koeppen-renewables
-
-python scripts/run_resample.py -180 -60 -160 -40 output.nc
-bash scripts/run_variability.sh ...
 ```
 
-This repository produces renewable zone classification, inspired by Koeppen climate zones. An example is as below.
-
-
-To run this repository:
-
-CDO must be installed to process weather and seasonal variability from ERA5 data.
-
-Create environment by
-`conda env create -f environment.yaml`
-
-Download the necessary data and put them in `/resources` capacity factor of wind and solar
+Download the necessary data and put them in `/resources/user` 
 - PV potential global https://globalsolaratlas.info/download/world  
 `World_PVOUT_GISdata_LTAy_AvgDailyTotals_GlobalSolarAtlas-v2_GEOTIFF.zip` and unzip. Put the file `PVOUT.tif` in `/resources/user`.
-PVOUT - Photovoltaic power potential [kWh/kWp] average daily totals, one data for year, convert to capacity factor by dividing by 24 hours.
-Around 368 MB.
+PVOUT - Photovoltaic power potential [kWh/kWp] average daily totals, one data for year, convert to capacity factor by dividing by 24 hours (around 368 MB).
 
-- Wind atlas power density https://globalwindatlas.info/en/download/gis-files  
+- Wind atlas capacity factor https://globalwindatlas.info/en/download/gis-files  
 Use wind capacity factor for IEC I class https://globalwindatlas.info/en/about/dataset   “IEC Class - Fatigue Loads” Class II Fatigue Loads including Wake, Class III Extreme Loads.   
-Put the file `cf_iec1_cog_100m.tif` to `/resources/user`.
+Filename is `cf_iec1_cog_100m.tif`.
 Warning: the wind atlas file is heavy, 14.8 GB. 
 
-- ERA5 daily data are processed directly from Earth Destine
-using zarr
+- ERA5 daily data are processed directly from Earth Data Destine using zarr format. Token is required to download from EarthDatahub. You can register and get the token in https://earthdatahub.destine.eu/getting-started. Put this token in `.env`
+```.env
+ERA5_TOKEN = "your-token-here"
+```
 
+This repository computes by 20×20° tiles:
 
-to run
+The default configuration is to run it globally, with tiles 20x20, bounds longitude -180 to 180, latitude -60 to 80.
 
-`python koeppen-renewables`
+```bash
+python koeppen-renewables
+```
+
 OR
-`python koeppen-renewables --global`
-default, run globally, with tiles 20x20 
+```bash
+python koeppen-renewables --global
+```
 
-OR
-`python koeppen-renewables --bounds -20 0 0 20`
-to run within provided bounds, also with tiles 20x20
-
-`python koeppen-renewables --global --bounds `
-will return error
+to run within provided bounds, also with tiles 20x20 incrementally (bounds: minx, miny, maxx, maxy), i.e. the results can return tiles outside of the given bounds in increments of 20 from the starting lat/lon.
+```bash
+python koeppen-renewables --bounds -20 0 0 20
+```

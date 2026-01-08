@@ -1,7 +1,18 @@
+# Data and Outputs
 data/
 results/
+resources/
 *.nc
 *.tif
+*.csv
+*.parquet
 *.ipynb
-__pycache__/
+*.zarr/
+
+# Secrets
 .env
+
+# Python
+__pycache__/
+.ipynb_checkpoints/
+.venv/

@@ -54,3 +54,7 @@ PATHS = {
     "wind_atlas": "resources/user/cf_iec1_cog_100m.tif",
     "ghsl": "resources/user/ghsl_built_s.tif",
 }
+
+# Demand thresholds
+HEAING_DEGREE_THRESHOLD = 10.0  # °C
+COOLING_DEGREE_THRESHOLD = 30.0  # °C

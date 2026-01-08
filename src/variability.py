@@ -3,6 +3,7 @@ import numpy as np
 import time
 from dask.distributed import Client
 from config import REFERENCE_RESOLUTION
+from src.geo_processing import load_era5_variable
 
 
 def calculate_maximum_deficit_dask(imbalance_da, time_dim="time"):
@@ -39,64 +40,6 @@ def calculate_maximum_deficit_dask(imbalance_da, time_dim="time"):
     return deficit.isel({time_dim: slice(0, T)}).max(dim=time_dim) / T
 
 
-def load_physical_variable(ds, var, bounds, start_year, end_year):
-    """
-    Slices and prepares raw ERA5 variables.
-    Handles coordinate wrapping (0-360 to -180-180) and descending latitude.
-    """
-    min_lon, min_lat, max_lon, max_lat = bounds
-
-    # Wrap input bounds to 0-360 for ERA5 compatibility
-    sel_min_lon, sel_max_lon = min_lon % 360, max_lon % 360
-    # Ensure latitude is North-to-South
-    sel_lat_up, sel_lat_lo = max(min_lat, max_lat), min(min_lat, max_lat)
-
-    # Spatial selection
-    if sel_min_lon > sel_max_lon:  # Crosses Prime Meridian
-        lon_slice = xr.concat(
-            [
-                ds.longitude.sel(longitude=slice(sel_min_lon, 360)),
-                ds.longitude.sel(longitude=slice(0, sel_max_lon)),
-            ],
-            dim="longitude",
-        )
-        selector = {"longitude": lon_slice, "latitude": slice(sel_lat_up, sel_lat_lo)}
-    else:
-        selector = {
-            "longitude": slice(sel_min_lon, sel_max_lon),
-            "latitude": slice(sel_lat_up, sel_lat_lo),
-        }
-
-    # Temporal selection
-    ds = ds.sel(valid_time=slice(f"{start_year}-01-01", f"{end_year}-12-31"))
-
-    # Load variable, calculate wind speed if needed
-    try:
-        if var == "ws100":
-            u, v = ds["u100"].sel(**selector), ds["v100"].sel(**selector)
-            da = xr.apply_ufunc(
-                np.hypot, u, v, dask="parallelized", output_dtypes=[u.dtype]
-            )
-            da.name = "ws100"
-            da.attrs["units"] = "m/s"
-            da.attrs["long_name"] = "Wind Speed at 100m"
-        else:
-            da = ds[var].sel(**selector)
-
-        if da.size == 0:
-            return None
-
-        # Normalize back to -180 to 180 and sort for future processing
-        da = da.assign_coords(longitude=((da.longitude + 180) % 360) - 180).sortby(
-            "longitude"
-        )
-        # convert to daily means to reduce data volume
-        return da.resample(valid_time="1D").mean()
-    except Exception as e:
-        print(f"Error selecting {var}: {e}")
-        return None
-
-
 def compute_variability_hourly(
     url, variable, bounds, start_year, end_year, start_client=False
 ):
@@ -107,8 +50,7 @@ def compute_variability_hourly(
     if start_client:
         Client()
 
-    ds = xr.open_dataset(url, chunks={}, engine="zarr")
-    da = load_physical_variable(ds, variable, bounds, start_year, end_year)
+    da = load_era5_variable(url, variable, bounds, start_year, end_year)
 
     # Optimization: Chunk by spatial dimensions so each 'task' is a pixel-column
     da = da.chunk({"valid_time": -1, "latitude": 10, "longitude": 10})

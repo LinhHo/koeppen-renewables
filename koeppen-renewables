@@ -22,7 +22,7 @@ REPO_ROOT = Path(__file__).parent
 sys.path.append(str(REPO_ROOT))
 sys.path.append(str(REPO_ROOT / "src"))
 
-from src.resampling import resample_tile
+from src.abundance_atlas import resample_atlas
 from src.process_tiles import generate_tiles, run_variability_for_tile
 from config import (
     GLOBAL_DOMAIN,
@@ -101,10 +101,10 @@ def main():
 
         # --- Resampling atlas & demand ---
         resampled_out = output_dir / (
-            f"resampled_{tile[0]}_{tile[1]}_{tile[2]}_{tile[3]}_{START_YEAR}_{END_YEAR}.nc"
+            f"abundance_{tile[0]}_{tile[1]}_{tile[2]}_{tile[3]}_{START_YEAR}_{END_YEAR}.nc"
         )
 
-        ds = resample_tile(tile, PATHS, resolution=REFERENCE_RESOLUTION)
+        ds = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
         ds.to_netcdf(resampled_out)
 
         # --- ERA5 variability ---
