@@ -1,5 +1,6 @@
 # SCM syntax highlighting & preventing 3-way merges
 pixi.lock merge=binary linguist-language=YAML linguist-generated=true
-# prevent Git from getting "confused" by large binary files .nc and .zarr
+* text=auto eol=lf
+# # Treat data files as binary to prevent Git from getting "confused" by large binary files .nc and .zarr
 *.nc binary
 *.zarr/ binary
