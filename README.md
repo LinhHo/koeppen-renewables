@@ -26,16 +26,19 @@ PVOUT - Photovoltaic power potential [kWh/kWp] average daily totals, one data fo
 - Wind atlas capacity factor https://globalwindatlas.info/en/download/gis-files  
 Use wind capacity factor for IEC I class https://globalwindatlas.info/en/about/dataset   “IEC Class - Fatigue Loads” Class II Fatigue Loads including Wake, Class III Extreme Loads.   
 Filename is `cf_iec1_cog_100m.tif`.
-Warning: the wind atlas file is heavy, 14.8 GB. 
+Warning: the wind atlas file is heavy, 14.8 GB.
+
+- Global Human Settlement Layer (GHSL) Total built-up surface and the component of non-residential (NRES) built-up surface (m2) GHS-BUILT-S (2023) https://human-settlement.emergency.copernicus.eu/ghs_buS2023.php. Coordinate system WGS84, resolution 30 arcsec, for the year 2023. Filename is `GHS_BUILT_S_E2020_GLOBE_R2023A_4326_30ss_V1_0_R8_C29.tif`.
 
 - ERA5 daily data are processed directly from Earth Data Destine using zarr format. Token is required to download from EarthDatahub. You can register and get the token in https://earthdatahub.destine.eu/getting-started. Put this token in `.env`
 ```.env
 ERA5_TOKEN = "your-token-here"
 ```
+To upgrade the access to EarthDatahub, for example for large data use for academic purpose, check ou https://platform.destine.eu/access-policy-upgrade/.
 
 This repository computes by 20×20° tiles:
 
-The default configuration is to run it globally, with tiles 20x20, bounds longitude -180 to 180, latitude -60 to 80.
+The default configuration is to run it globally, with tiles 20x20°, bounds longitude -180 to 180, latitude -60 to 80.
 
 ```bash
 python koeppen-renewables
@@ -46,7 +49,7 @@ OR
 python koeppen-renewables --global
 ```
 
-to run within provided bounds, also with tiles 20x20 incrementally (bounds: minx, miny, maxx, maxy), i.e. the results can return tiles outside of the given bounds in increments of 20 from the starting lat/lon.
+to run within provided bounds, also with tiles 20x20 incrementally (bounds: minx miny maxx maxy). Note that the results can return tiles outside of the given bounds in increments of 20° from the starting lat/lon.
 ```bash
 python koeppen-renewables --bounds -20 0 0 20
 ```

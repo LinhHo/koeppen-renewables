@@ -53,7 +53,7 @@ def generate_tiles(
 
 def run_variability_for_tile(
     tile: Tile,
-    output_dir: Path,
+    variable: str,
 ):
     """
     Compute ERA5 seasonal and weather variability for one tile.
@@ -70,23 +70,11 @@ def run_variability_for_tile(
     minx, miny, maxx, maxy = tile
     bounds = (minx, miny, maxx, maxy)
 
-    variables = {
-        "solar": "ssrd",
-        "wind": "ws100",
-    }
-
-    for label, variable in variables.items():
-        print(f"    → Variability: {label}")
-
-        ds = compute_variability_hourly(
-            url=ERA5_ZARR_URL,
-            variable=variable,
-            bounds=bounds,
-            start_year=START_YEAR,
-            end_year=END_YEAR,
-        )
-
-        outfile = output_dir / (
-            f"variability_{label}_{minx}_{miny}_{maxx}_{maxy}_{START_YEAR}_{END_YEAR}.nc"
-        )
-        ds.to_netcdf(outfile)
+    ds = compute_variability_hourly(
+        url=ERA5_ZARR_URL,
+        variable=variable,
+        bounds=bounds,
+        start_year=START_YEAR,
+        end_year=END_YEAR,
+    )
+    return ds

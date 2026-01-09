@@ -39,6 +39,8 @@ GLOBAL_DOMAIN = {
 TILE_SIZE = 20.0  # degrees
 REFERENCE_RESOLUTION = 0.25  # ERA5 grid (degrees)
 
+DEMAND_WEIGHTING_BUFFER = 2  # degrees
+
 # -----------------------
 # ERA5 access
 # -----------------------
@@ -52,7 +54,7 @@ ERA5_ZARR_URL = (
 PATHS = {
     "solar_atlas": "resources/user/PVOUT.tif",
     "wind_atlas": "resources/user/cf_iec1_cog_100m.tif",
-    "ghsl": "resources/user/ghsl_built_s.tif",
+    "ghsl": "resources/user/GHS_BUILT_S_E2020_GLOBE_R2023A_4326_30ss_V1_0_R8_C29.tif",
 }
 
 # Demand thresholds
