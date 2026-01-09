@@ -38,18 +38,23 @@ To upgrade the access to EarthDatahub, for example for large data use for academ
 
 This repository computes by 20×20° tiles:
 
+For a quick test for a tile around the Netherlands.
+
+```bash
+pixi run test-NL
+```
+
 The default configuration is to run it globally, with tiles 20x20°, bounds longitude -180 to 180, latitude -60 to 80.
 
 ```bash
-python koeppen-renewables
+pixi run global
 ```
 
-OR
-```bash
-python koeppen-renewables --global
-```
+to run within provided bounds, also with tiles 20x20 incrementally (bounds: minx miny maxx maxy). 
+For example, to check if the code runs correctly around the change of Prime Meridian and the Equator. To make sure pixi understand negative numnbers, add `argument terminator --` before the bound values.
 
-to run within provided bounds, also with tiles 20x20 incrementally (bounds: minx miny maxx maxy). Note that the results can return tiles outside of the given bounds in increments of 20° from the starting lat/lon.
+
 ```bash
-python koeppen-renewables --bounds -20 0 0 20
+pixi run python main.py --bounds -- -20 -10 10 20
 ```
+Note that the results can return tiles outside of the given bounds in increments of 20° from the starting lat/lon.

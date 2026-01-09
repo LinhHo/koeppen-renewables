@@ -16,3 +16,6 @@ resources/
 __pycache__/
 .ipynb_checkpoints/
 .venv/
+# pixi environments
+.pixi
+*.egg-info

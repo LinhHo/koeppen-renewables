@@ -1,0 +1,30 @@
+[workspace]
+authors = ["Linh Ho <45103089+LinhHo@users.noreply.github.com>"]
+channels = ["conda-forge"]
+name = "koeppen_renewables"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+# Run a specific tile for testing
+test-NL = "python main.py --bounds 0 40 10 55"
+test-zero = "python main.py --bounds -10 -10 10 10"
+# Run the full global processing 'pixi run global'
+global = "python main.py --global"
+# Or run specific bounds for Europe
+europe = "python main.py --bounds -20 35 40 70"
+# Helper to clean temporary files
+clean = "rm results/automatic/*.tmp"
+
+[dependencies]
+xarray = ">=2025.12.0,<2026"
+dask = ">=2025.12.0,<2026"
+rioxarray = ">=0.20.0,<0.21"
+netcdf4 = ">=1.7.3,<2"
+scipy = ">=1.16.3,<2"
+pandas = ">=2.3.3,<3"
+zarr = ">=3.1.5,<4"
+bottleneck = ">=1.6.0,<2"
+python-dotenv = "*"
+numpy = "*"
+
