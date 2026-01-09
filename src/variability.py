@@ -2,9 +2,13 @@ import xarray as xr
 import numpy as np
 import time
 from dask.distributed import Client
-from config import REFERENCE_RESOLUTION
-from src.geo_processing import load_era5_variable
+from typing import Tuple
 
+from src.geo_processing import load_era5_variable
+from config import START_YEAR, END_YEAR, ERA5_ZARR_URL
+
+
+Tile = Tuple[float, float, float, float]
 
 def calculate_maximum_deficit_dask(imbalance_da, time_dim="time"):
     """
@@ -95,3 +99,31 @@ def compute_variability_hourly(
             "weather_variability": weather_var,
         }
     ).compute()
+
+def run_variability_for_tile(
+    tile: Tile,
+    variable: str,
+):
+    """
+    Compute ERA5 seasonal and weather variability for one tile.
+
+    For wind:
+    - u100 and v100 are combined into ws100 internally
+    - variability is computed on wind speed magnitude
+
+    For solar:
+    - ssrd is used directly
+
+    Results are saved as NetCDF files in output_dir.
+    """
+    minx, miny, maxx, maxy = tile
+    bounds = (minx, miny, maxx, maxy)
+
+    ds = compute_variability_hourly(
+        url=ERA5_ZARR_URL,
+        variable=variable,
+        bounds=bounds,
+        start_year=START_YEAR,
+        end_year=END_YEAR,
+    )
+    return ds

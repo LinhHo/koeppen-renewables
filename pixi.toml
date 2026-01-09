@@ -27,4 +27,7 @@ zarr = ">=3.1.5,<4"
 bottleneck = ">=1.6.0,<2"
 python-dotenv = "*"
 numpy = "*"
+requests = ">=2.32.5,<3"
+aiohttp = ">=3.13.3,<4"
+fsspec = ">=2025.12.0,<2026"
 

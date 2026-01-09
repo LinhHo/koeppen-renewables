@@ -3,6 +3,7 @@ import numpy as np
 import xarray as xr
 from rasterio.enums import Resampling
 from rioxarray.exceptions import NoDataInBounds
+from typing import Iterator, Tuple
 import time
 import logging
 
@@ -97,49 +98,115 @@ clip, resample
 """
 
 
-def clip_and_resample(
-    input_raster, reference_raster, bounds, resampling=Resampling.average
-):
-    """Clip raster to bounding box and resample to ERA5 grid."""
-    minx, miny, maxx, maxy = bounds
+def clip_and_resample(input_raster, template, resampling=Resampling.average):
+    """Automatically maps x/y to lon/lat and resamples."""
+    # Temporarily rename template to x/y so rioxarray understands it
+    target = template.rename({"longitude": "x", "latitude": "y"})
+    minx, miny, maxx, maxy = target.rio.bounds()
     try:
-        clipped = input_raster.rio.clip_box(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
-        return clipped.rio.reproject_match(
-            reference_raster,
+        # add some buffer when clipping to ensure edges are captured
+        clipped = input_raster.rio.clip_box(
+            minx=minx - REFERENCE_RESOLUTION,
+            miny=miny - REFERENCE_RESOLUTION,
+            maxx=maxx + REFERENCE_RESOLUTION,
+            maxy=maxy + REFERENCE_RESOLUTION,
+        )
+        resampled = clipped.rio.reproject_match(
+            target,
             resampling=resampling,
             nodata=np.nan,
-            masked=True,
         )
+        # Rename back to match the template's original names
+        return resampled.rename({"x": "longitude", "y": "latitude"})
     except NoDataInBounds:
-        return xr.full_like(reference_raster, np.nan)
+        return xr.full_like(target, np.nan)
 
 
 """
 Create grids of reference rasters
 """
 
+Tile = Tuple[float, float, float, float]
 
-def create_reference_raster(bounds, resolution, crs="EPSG:4326"):
+
+def generate_tiles(
+    minx: float,
+    miny: float,
+    maxx: float,
+    maxy: float,
+    tile_size: float,
+) -> Iterator[Tile]:
     """
-    Create a synthetic reference raster with given bounds and resolution.
-    return:
-    xr.DataArray
-        Empty reference raster with correct grid and CRS
+    Generate non-overlapping tiles covering a rectangular domain.
+
+    Parameters
+    ----------
+    minx, miny, maxx, maxy : float
+        Bounding box of the domain (lon/lat).
+    tile_size : float
+        Tile size in degrees.
+
+    Yields
+    ------
+    tile : (minx, miny, maxx, maxy)
+        Bounds of one tile.
+    """
+    lon = minx
+    while lon < maxx:
+        lat = miny
+        while lat < maxy:
+            yield lon, lat, lon + tile_size, lat + tile_size
+            lat += tile_size
+        lon += tile_size
+
+
+def create_tile_template(bounds, resolution, crs="EPSG:4326"):
+    """
+    Creates the reference coordinate system for a tile.
+    Matches ERA5 standard: Latitude: North-South, BUT Longitude: -180-180 (same as atlases) instead of 0-360 (ERA5).
     """
     minx, miny, maxx, maxy = bounds
 
-    # excluding upper edge to avoid overlap when stitching tiles
-    lons = np.arange(minx, maxx, resolution)
-    lats = np.arange(miny, maxy, resolution)
+    # Exclusive upper bounds to prevent stitching overlaps: linspace is more reliable, np.arange can be weird with float
+    # Longitude: Ascending
+    # Latitude: Descending, i.e. North to South to match with ERA5 and load_physical_variable logic
+    num_lons = int(round(abs(maxx - minx) / resolution))
+    num_lats = int(round(abs(maxy - miny) / resolution))
 
-    da = xr.DataArray(
-        np.zeros((len(lats), len(lons))),
-        coords={"y": lats, "x": lons},
-        dims=("y", "x"),
-        name="reference",
+    lons = np.linspace(minx, maxx, num_lons, endpoint=False)
+    lats = np.linspace(maxy, miny, num_lats, endpoint=False)
+
+    template = xr.Dataset(
+        coords={
+            "latitude": (["latitude"], lats.astype(np.float32)),
+            "longitude": (["longitude"], lons.astype(np.float32)),
+        }
     )
+    # rioxarray expects x/y for spatial operations, we'll map them during resampling
+    return template.rio.write_crs(crs)
 
-    return da.rio.write_crs(crs)
+
+# def create_reference_raster(bounds, resolution, crs="EPSG:4326"):
+#     """
+#     Create a synthetic reference raster with given bounds and resolution.
+#     return:
+#     xr.DataArray
+#         Empty reference raster with correct grid and CRS
+#     """
+#     minx, miny, maxx, maxy = bounds
+
+#     # excluding upper edge to avoid overlap when stitching tiles
+#     lons = np.arange(minx, maxx, resolution)
+#     lats = np.arange(miny, maxy, resolution)
+
+#     da = xr.DataArray(
+#         np.zeros((len(lats), len(lons))),
+#         coords={"y": lats, "x": lons},
+#         dims=("y", "x"),
+#         name="reference",
+#     )
+
+#     return da.rio.write_crs(crs)
 
 
 """

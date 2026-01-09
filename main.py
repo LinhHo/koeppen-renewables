@@ -24,7 +24,8 @@ REPO_ROOT = Path(__file__).parent
 sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 
 from src.abundance_atlas import resample_atlas
-from src.process_tiles import generate_tiles, run_variability_for_tile
+from src.geo_processing import generate_tiles
+from src.variability import run_variability_for_tile
 from config import (
     GLOBAL_DOMAIN,
     TILE_SIZE,
@@ -72,7 +73,7 @@ def main():
         try:
             # 1. Atlas
             print("  -> Resampling Atlas...")
-            ds_main = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
+            ds_atlas = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
 
             # 2. Variability (Wind & Solar)
             for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
@@ -81,7 +82,7 @@ def main():
                 # Merge into the main dataset for this tile
                 ds_main = xr.merge(
                     [
-                        ds_main,
+                        ds_atlas,
                         ds_var.rename({v: f"{label}_{v}" for v in ds_var.data_vars}),
                     ]
                 )
