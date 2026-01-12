@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import argparse
 import xarray as xr
+import numpy as np
 
 REPO_ROOT = Path(__file__).parent
 sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
@@ -26,6 +27,10 @@ sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 from src.abundance_atlas import resample_atlas
 from src.geo_processing import generate_tiles
 from src.variability import run_variability_for_tile
+from src.demand import (
+    compute_temperature_demand_indicator,
+    compute_demand_settlement_proximity,
+)
 from config import (
     GLOBAL_DOMAIN,
     TILE_SIZE,
@@ -65,38 +70,79 @@ def main():
         tile_str = "_".join(map(str, tile))
         out_file = output_dir / f"processed_{tile_str}_{START_YEAR}_{END_YEAR}.nc"
 
-        if out_file.exists():
-            print(f"Tile {tile_str} exists. Skipping.")
-            continue
+        if not out_file.exists():
+            print(f"\n--- Processing Tile: {tile_str} ---")
+            try:
+                # 1. Atlas
+                print("  -> Resampling Atlas...")
+                ds_main = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
 
-        print(f"\n--- Processing Tile: {tile_str} ---")
-        try:
-            # 1. Atlas
-            print("  -> Resampling Atlas...")
-            ds_atlas = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
+                # 2. Variability (Wind & Solar)
+                for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
+                    print(f"  -> Computing {label} variability...")
+                    ds_var = run_variability_for_tile(tile, var)
+                    # Merge into the main dataset for this tile
+                    ds_main = xr.merge(
+                        [
+                            ds_main,
+                            ds_var.rename(
+                                {v: f"{label}_{v}" for v in ds_var.data_vars}
+                            ),
+                        ] #, join="override" # ignore slight coordinate mismatches
+                    )
 
-            # 2. Variability (Wind & Solar)
-            for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
-                print(f"  -> Computing {label} variability...")
-                ds_var = run_variability_for_tile(tile, var)
-                # Merge into the main dataset for this tile
-                ds_main = xr.merge(
-                    [
-                        ds_atlas,
-                        ds_var.rename({v: f"{label}_{v}" for v in ds_var.data_vars}),
-                    ]
+                # 3. Atomic Save (HPC Safe)
+                tmp_path = str(out_file) + ".tmp"
+                ds_main.to_netcdf(tmp_path)
+                os.rename(tmp_path, out_file)
+                print(f"  [SUCCESS] Saved to {out_file.name}")
+
+            except Exception as e:
+                print(f"  [ERROR] Tile {tile_str} failed: {e}")
+                if "tmp_path" in locals() and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        else:
+            print(
+                f"Processed atlas and variability for tile {tile_str} exists. Skipping."
+            )
+
+        # save demand separately for now
+        demand_outfile = (
+            output_dir / f"demand_potential_{tile_str}_{START_YEAR}_{END_YEAR}.nc"
+        )
+
+        if not demand_outfile.exists():
+
+            print(f"\n--- Processing demand potential for Tile: {tile_str} ---")
+            try:
+                # 1. Demand potential from heating/cooling needs
+                print("  -> Computing demand potential...")
+                ds_demand = xr.Dataset()
+                ds_demand["demand_temperature_induced"] = (
+                    compute_temperature_demand_indicator(tile)
+                )
+                # 2. Settlement proximity and remove buffer zone
+                ds_demand["demand_settlement_proximity"] = (
+                    compute_demand_settlement_proximity(tile, PATHS)
+                ).sel(longitude=ds_demand.longitude, latitude=ds_demand.latitude).rename("demand_settlement_proximity")
+                ##>>>>>>  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<<<<<<<<<<<<<<
+
+                ds_demand["demand_potential"] = (
+                    np.log1p(ds_demand["demand_settlement_proximity"])
+                    * ds_demand["demand_temperature_induced"]
                 )
 
-            # 3. Atomic Save (HPC Safe)
-            tmp_path = str(out_file) + ".tmp"
-            ds_main.to_netcdf(tmp_path)
-            os.rename(tmp_path, out_file)
-            print(f"  [SUCCESS] Saved to {out_file.name}")
-
-        except Exception as e:
-            print(f"  [ERROR] Tile {tile_str} failed: {e}")
-            if "tmp_path" in locals() and os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                # 3. Atomic Save (HPC Safe)
+                tmp_path = str(demand_outfile) + ".tmp"
+                ds_demand.to_netcdf(tmp_path)
+                os.rename(tmp_path, demand_outfile)
+                print(f"  [SUCCESS] Saved to {demand_outfile.name}")
+            except Exception as e:
+                print(f"  [ERROR] Compute demand for tile {tile_str} failed: {e}")
+                if "tmp_path" in locals() and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        else:
+            print(f"Demand potential {tile_str} exists. Skipping.")
 
 
 if __name__ == "__main__":

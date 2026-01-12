@@ -36,7 +36,7 @@ GLOBAL_DOMAIN = {
     "maxy": 80.0,
 }
 
-TILE_SIZE = 20.0  # degrees
+TILE_SIZE = 5.0  # degrees
 REFERENCE_RESOLUTION = 0.25  # ERA5 grid (degrees)
 
 DEMAND_WEIGHTING_BUFFER = 2  # degrees
