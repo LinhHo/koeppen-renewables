@@ -59,3 +59,9 @@ For example, to check if the code runs correctly around the change of Prime Meri
 pixi run python main.py --bounds -20 -10 10 20
 ```
 Note that the results can return tiles outside of the given bounds in increments of 20° from the starting lat/lon.
+
+Specify the tile size by, the default (in config) is 20 degrees.
+```bash
+pixi run python main.py --bounds -20 -10 10 20 --tile-size 5
+
+```

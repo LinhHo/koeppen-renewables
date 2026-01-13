@@ -50,11 +50,18 @@ def compute_variability_hourly(url, variable, bounds, start_year, end_year):
     and Weather (interannual) variability.
     """
     da = load_era5_variable(url, variable, bounds, start_year, end_year)
+    da = da.chunk(
+        {"valid_time": -1, "latitude": 10, "longitude": 10}
+    )  # Ensure time is in single chunk for deficit calculation
+    # Remove Feb 29 for climatology calculations
+    da = da.sel(
+        valid_time=~((da.valid_time.dt.month == 2) & (da.valid_time.dt.day == 29))
+    )
 
     # --- 1. SEASONAL VARIABILITY ---
     # Captures the deficit caused by the regular annual/diurnal cycle
     clim = da.groupby("valid_time.dayofyear").mean("valid_time")
-    clim_norm = clim / clim.mean()
+    clim_norm = clim / clim.mean(dim="dayofyear")
 
     seasonal_imb = (clim_norm - 1).rename({"dayofyear": "time"})
     seasonal_var = calculate_maximum_deficit_dask(seasonal_imb, time_dim="time")
@@ -64,7 +71,7 @@ def compute_variability_hourly(url, variable, bounds, start_year, end_year):
 
     # Vectorized normalization: divides each year by its own mean to isolate variance
     yearly_means = da.groupby("valid_time.year").mean("valid_time")
-    year_norm = da.groupby("valid_time.year") / yearly_means
+    year_norm = da / yearly_means
 
     # Align the climatology reference with the actual hours of the full time series
     # (Maps the 365-day cycle to the multi-decade period)

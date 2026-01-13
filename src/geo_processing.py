@@ -21,7 +21,7 @@ def open_era5_zarr(url, retries=3, delay=3):
             # Chunk by spatial dimensions but keep time in single chunk for variability calculations
             return xr.open_dataset(
                 url,
-                chunks={"valid_time": -1, "latitude": 10, "longitude": 10},
+                chunks={},
                 engine="zarr",
             )
         except Exception as e:
@@ -56,10 +56,7 @@ def load_era5_variable(url, var, bounds, start_year, end_year):
         )
     else:
         sel_lons = np.arange(sel_min_lon, sel_max_lon, REFERENCE_RESOLUTION)
-    selector = {
-        "latitude": sel_lats,
-        "longitude": sel_lons,
-    }
+    selector = {"latitude": sel_lats, "longitude": sel_lons, "method": "nearest"}
 
     # Temporal selection
     ds = ds.sel(valid_time=slice(f"{start_year}-01-01", f"{end_year}-12-31"))
@@ -104,10 +101,10 @@ def clip_and_resample(input_raster, template, resampling=Resampling.average):
     try:
         # add some buffer when clipping to ensure edges are captured
         clipped = input_raster.rio.clip_box(
-            minx=minx - REFERENCE_RESOLUTION,
-            miny=miny - REFERENCE_RESOLUTION,
-            maxx=maxx + REFERENCE_RESOLUTION,
-            maxy=maxy + REFERENCE_RESOLUTION,
+            minx=minx,  # - REFERENCE_RESOLUTION,
+            miny=miny,  # - REFERENCE_RESOLUTION,
+            maxx=maxx,  # + REFERENCE_RESOLUTION,
+            maxy=maxy,  # + REFERENCE_RESOLUTION,
         )
         resampled = clipped.rio.reproject_match(
             target,
