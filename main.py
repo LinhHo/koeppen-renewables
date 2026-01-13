@@ -52,7 +52,7 @@ def parse_args():
 
 
 def main():
-    # client = Client()  # n_workers=2, threads_per_worker=2, memory_limit="12GB")
+    client = Client()  # n_workers=2, threads_per_worker=2, memory_limit="12GB")
     args = parse_args()
     domain = (
         dict(zip(["minx", "miny", "maxx", "maxy"], args.bounds))
@@ -98,13 +98,6 @@ def main():
                         join="override",  # ignore slight coordinate mismatches
                         compat="override",
                     )
-                # 3. Demand Potential
-                # incl. demand_potential, demand_temperature_induced, demand_settlement_proximity
-                print("  -> Computing demand potential...")
-                ds_demand = run_demand_potential_for_tile(tile, PATHS)
-                ds_main = xr.merge(
-                    [ds_main, ds_demand], join="override", compat="override"
-                )
 
                 # Atomic Save (HPC Safe)
                 tmp_path = str(out_file) + ".tmp"
@@ -120,6 +113,33 @@ def main():
                     os.remove(tmp_path)
         else:
             print(f"Processed tile for {tile_str} exists. Skipping.")
+
+        # 3. Demand Potential
+        # incl. demand_potential, demand_temperature_induced, demand_settlement_proximity
+        demand_out = (
+            output_dir / f"demand_potential_{tile_str}_{START_YEAR}_{END_YEAR}.nc"
+        )
+
+        if not demand_out.exists():
+            print(f"\n--- Processing Tile: {tile_str} ---")
+            try:
+                print("  -> Computing demand potential...")
+                ds_demand = run_demand_potential_for_tile(tile, PATHS)
+
+                print("  -> Saving demand potential...")
+                # Atomic Save (HPC Safe)
+                tmp_path = str(demand_out) + ".tmp"
+                ds_demand.to_netcdf(tmp_path, engine="netcdf4")
+                os.rename(tmp_path, demand_out)
+                print(f"  [SUCCESS] Saved to {demand_out.name}")
+                ds_demand.close()
+                del ds_demand
+            except Exception as e:
+                print(f"  [ERROR] Tile {tile_str} failed: {e}")
+                if "tmp_path" in locals() and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        else:
+            print(f"Demand potential tile for {tile_str} exists. Skipping.")
 
         # client.restart()
     # client.close()
