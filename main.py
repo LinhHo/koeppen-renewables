@@ -92,16 +92,19 @@ def main():
                             ),
                         ],
                         join="override",  # ignore slight coordinate mismatches
+                        compat="override",
                     )
                 # 3. Demand Potential
                 # incl. demand_potential, demand_temperature_induced, demand_settlement_proximity
                 print("  -> Computing demand potential...")
                 ds_demand = run_demand_potential_for_tile(tile, PATHS)
-                ds_main = xr.merge([ds_main, ds_demand], join="override")
+                ds_main = xr.merge(
+                    [ds_main, ds_demand], join="override", compat="override"
+                )
 
                 # Atomic Save (HPC Safe)
                 tmp_path = str(out_file) + ".tmp"
-                ds_main.to_netcdf(tmp_path)
+                ds_main.to_netcdf(tmp_path, engine="netcdf4")
                 os.rename(tmp_path, out_file)
                 print(f"  [SUCCESS] Saved to {out_file.name}")
                 ds_main.close()
