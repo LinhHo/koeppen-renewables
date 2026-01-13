@@ -52,7 +52,7 @@ def parse_args():
 
 
 def main():
-    client = Client(n_workers=2, threads_per_worker=2, memory_limit="4GB")
+    client = Client(n_workers=2, threads_per_worker=2, memory_limit="12GB")
     args = parse_args()
     domain = (
         dict(zip(["minx", "miny", "maxx", "maxy"], args.bounds))
