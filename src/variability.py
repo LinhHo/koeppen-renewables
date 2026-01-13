@@ -1,7 +1,6 @@
 import xarray as xr
 import numpy as np
 import time
-from dask.distributed import Client
 from typing import Tuple
 
 from src.geo_processing import load_era5_variable
@@ -9,6 +8,7 @@ from config import START_YEAR, END_YEAR, ERA5_ZARR_URL
 
 
 Tile = Tuple[float, float, float, float]
+
 
 def calculate_maximum_deficit_dask(imbalance_da, time_dim="time"):
     """
@@ -44,27 +44,17 @@ def calculate_maximum_deficit_dask(imbalance_da, time_dim="time"):
     return deficit.isel({time_dim: slice(0, T)}).max(dim=time_dim) / T
 
 
-def compute_variability_hourly(
-    url, variable, bounds, start_year, end_year, start_client=False
-):
+def compute_variability_hourly(url, variable, bounds, start_year, end_year):
     """
     Main pipeline: Loads data, calculates Seasonal (climatological)
     and Weather (interannual) variability.
     """
-    if start_client:
-        Client()
-
     da = load_era5_variable(url, variable, bounds, start_year, end_year)
-
-    # Optimization: Chunk by spatial dimensions so each 'task' is a pixel-column
-    da = da.chunk({"valid_time": -1, "latitude": 10, "longitude": 10})
 
     # --- 1. SEASONAL VARIABILITY ---
     # Captures the deficit caused by the regular annual/diurnal cycle
     clim = da.groupby("valid_time.dayofyear").mean("valid_time")
-    clim_norm = (
-        clim / clim.mean()
-    ).compute()  # Small enough to keep in memory as reference
+    clim_norm = clim / clim.mean()
 
     seasonal_imb = (clim_norm - 1).rename({"dayofyear": "time"})
     seasonal_var = calculate_maximum_deficit_dask(seasonal_imb, time_dim="time")
@@ -98,7 +88,8 @@ def compute_variability_hourly(
             "seasonal_variability": seasonal_var,
             "weather_variability": weather_var,
         }
-    ).compute()
+    )
+
 
 def run_variability_for_tile(
     tile: Tile,

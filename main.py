@@ -20,6 +20,7 @@ from pathlib import Path
 import argparse
 import xarray as xr
 import numpy as np
+from dask.distributed import Client
 
 REPO_ROOT = Path(__file__).parent
 sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
@@ -48,6 +49,7 @@ def parse_args():
 
 
 def main():
+    client = Client(n_workers=2, threads_per_worker=2, memory_limit="4GB")
     args = parse_args()
     domain = (
         dict(zip(["minx", "miny", "maxx", "maxy"], args.bounds))
@@ -89,11 +91,13 @@ def main():
                         join="override",  # ignore slight coordinate mismatches
                     )
 
-                # 3. Atomic Save (HPC Safe)
+                # Atomic Save (HPC Safe)
                 tmp_path = str(out_file) + ".tmp"
                 ds_main.to_netcdf(tmp_path)
                 os.rename(tmp_path, out_file)
                 print(f"  [SUCCESS] Saved to {out_file.name}")
+                ds_main.close()
+                del ds_main
 
             except Exception as e:
                 print(f"  [ERROR] Tile {tile_str} failed: {e}")
@@ -113,21 +117,26 @@ def main():
 
             print(f"\n--- Processing demand potential for Tile: {tile_str} ---")
             try:
-                # 1. Demand potential from heating/cooling needs
+                # 3. Demand Potential
                 print("  -> Computing demand potential...")
                 ds_demand = run_demand_potential_for_tile(tile, PATHS)
 
-                # 3. Atomic Save (HPC Safe)
+                # Atomic Save (HPC Safe)
                 tmp_path = str(demand_outfile) + ".tmp"
                 ds_demand.to_netcdf(tmp_path)
                 os.rename(tmp_path, demand_outfile)
                 print(f"  [SUCCESS] Saved to {demand_outfile.name}")
+                ds_demand.close()
+                del ds_demand
+
             except Exception as e:
                 print(f"  [ERROR] Compute demand for tile {tile_str} failed: {e}")
                 if "tmp_path" in locals() and os.path.exists(tmp_path):
                     os.remove(tmp_path)
         else:
             print(f"Demand potential {tile_str} exists. Skipping.")
+        client.restart()
+    client.close()
 
 
 if __name__ == "__main__":

@@ -147,8 +147,10 @@ def compute_demand_settlement_proximity(
     ref = create_tile_template(buffer_bounds, REFERENCE_RESOLUTION)
 
     # Load and resample settlement raster
-    built = rxr.open_rasterio(paths["ghsl"]).squeeze().astype("float32")
-    settlement = clip_and_resample(built, ref)
+    with rxr.open_rasterio(paths["ghsl"], chunks=True).squeeze().astype(
+        "float32"
+    ) as built:
+        settlement = clip_and_resample(built, ref)
 
     # Kernel radius in pixels of buffer zone
     radius = int(DEMAND_WEIGHTING_BUFFER / REFERENCE_RESOLUTION)
@@ -187,9 +189,7 @@ def run_demand_potential_for_tile(
     ds = xr.Dataset()
 
     print("  -> Computing climate-driven demand indicator...")
-    ds["demand_temperature_induced"] = compute_temperature_demand_indicator(
-        bounds
-    )
+    ds["demand_temperature_induced"] = compute_temperature_demand_indicator(bounds)
 
     print("  -> Computing settlement-driven demand potential...")
     ds["demand_settlement_proximity"] = (
@@ -202,8 +202,7 @@ def run_demand_potential_for_tile(
     # Note: log1p used to compress large settlement values
     ##  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<
     ds["demand_potential"] = (
-        np.log1p(ds["demand_settlement_proximity"])
-        * ds["demand_temperature_induced"]
-        )
+        np.log1p(ds["demand_settlement_proximity"]) * ds["demand_temperature_induced"]
+    )
 
     return ds

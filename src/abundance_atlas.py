@@ -13,18 +13,11 @@ def resample_atlas(bounds, paths, resolution):
     ds = xr.Dataset()
     # Solar PVOUT - Photovoltaic power potential [kWh/kWp] average daily totals
     # convert to capacity factor by dividing by 24 hours
-    ds["solar_CF"] = (
-        clip_and_resample(
-            rxr.open_rasterio(
-                paths["solar_atlas"]
-            ).squeeze(),
-            template,
-        )
-        / 24
-    )
-    ds["wind_CF"] = clip_and_resample(
-        rxr.open_rasterio(paths["wind_atlas"]).squeeze(),
-        template,
-    )
+    with rxr.open_rasterio(paths["solar_atlas"], chunks=True).squeeze() as solar_atlas:
+        ds["solar_CF"] = clip_and_resample(solar_atlas, template) / 24
+
+    # Wind power capacity factor (unitless)
+    with rxr.open_rasterio(paths["wind_atlas"], chunks=True).squeeze() as wind_atlas:
+        ds["wind_CF"] = clip_and_resample(wind_atlas, template)
 
     return ds
