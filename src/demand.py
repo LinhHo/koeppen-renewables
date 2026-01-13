@@ -169,3 +169,41 @@ def compute_demand_settlement_proximity(
     )
 
     return weighted_buffered
+
+
+def run_demand_potential_for_tile(
+    tile: Tile,
+    paths: dict,
+) -> xr.Dataset:
+    """
+    Compute both climate-driven and settlement-driven demand indicators for one tile.
+
+    Results are saved as NetCDF files in output_dir.
+    """
+
+    minx, miny, maxx, maxy = tile
+    bounds = (minx, miny, maxx, maxy)
+
+    ds = xr.Dataset()
+
+    print("  -> Computing climate-driven demand indicator...")
+    ds["demand_temperature_induced"] = compute_temperature_demand_indicator(
+        bounds
+    )
+
+    print("  -> Computing settlement-driven demand potential...")
+    ds["demand_settlement_proximity"] = (
+        compute_demand_settlement_proximity(tile, paths)
+        .sel(longitude=ds.longitude, latitude=ds.latitude)
+        .rename("demand_settlement_proximity")
+    )
+
+    # Compute demand potential as product of both indicators
+    # Note: log1p used to compress large settlement values
+    ##  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<
+    ds["demand_potential"] = (
+        np.log1p(ds["demand_settlement_proximity"])
+        * ds["demand_temperature_induced"]
+        )
+
+    return ds

@@ -27,10 +27,7 @@ sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 from src.abundance_atlas import resample_atlas
 from src.geo_processing import generate_tiles
 from src.variability import run_variability_for_tile
-from src.demand import (
-    compute_temperature_demand_indicator,
-    compute_demand_settlement_proximity,
-)
+from src.demand import run_demand_potential_for_tile
 from config import (
     GLOBAL_DOMAIN,
     TILE_SIZE,
@@ -88,7 +85,8 @@ def main():
                             ds_var.rename(
                                 {v: f"{label}_{v}" for v in ds_var.data_vars}
                             ),
-                        ] #, join="override" # ignore slight coordinate mismatches
+                        ],
+                        join="override",  # ignore slight coordinate mismatches
                     )
 
                 # 3. Atomic Save (HPC Safe)
@@ -117,20 +115,7 @@ def main():
             try:
                 # 1. Demand potential from heating/cooling needs
                 print("  -> Computing demand potential...")
-                ds_demand = xr.Dataset()
-                ds_demand["demand_temperature_induced"] = (
-                    compute_temperature_demand_indicator(tile)
-                )
-                # 2. Settlement proximity and remove buffer zone
-                ds_demand["demand_settlement_proximity"] = (
-                    compute_demand_settlement_proximity(tile, PATHS)
-                ).sel(longitude=ds_demand.longitude, latitude=ds_demand.latitude).rename("demand_settlement_proximity")
-                ##>>>>>>  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<<<<<<<<<<<<<<
-
-                ds_demand["demand_potential"] = (
-                    np.log1p(ds_demand["demand_settlement_proximity"])
-                    * ds_demand["demand_temperature_induced"]
-                )
+                ds_demand = run_demand_potential_for_tile(tile, PATHS)
 
                 # 3. Atomic Save (HPC Safe)
                 tmp_path = str(demand_outfile) + ".tmp"
