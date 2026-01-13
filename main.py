@@ -21,6 +21,7 @@ import argparse
 import xarray as xr
 import numpy as np
 from dask.distributed import Client
+import gc
 
 REPO_ROOT = Path(__file__).parent
 sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
@@ -72,6 +73,7 @@ def main():
         os.remove(tmp_path)
 
     for tile in tiles:
+        client.restart()
         # Simplified naming: minx_miny_maxx_maxy
         tile_str = "_".join(map(str, tile))
         out_file = output_dir / f"processed_{tile_str}_{START_YEAR}_{END_YEAR}.nc"
@@ -140,8 +142,7 @@ def main():
                     os.remove(tmp_path)
         else:
             print(f"Demand potential tile for {tile_str} exists. Skipping.")
-
-        # client.restart()
+        gc.collect()
     # client.close()
 
 

@@ -46,7 +46,7 @@ def calculate_maximum_deficit_dask(imbalance_da, time_dim="time"):
     return deficit.isel({time_dim: slice(0, T)}).max(dim=time_dim) / T
 
 
-def compute_variability_hourly(url, variable, bounds, start_year, end_year):
+def compute_variability_daily(url, variable, bounds, start_year, end_year):
     """
     Main pipeline: Loads data, calculates Seasonal (climatological)
     and Weather (interannual) variability.
@@ -64,7 +64,7 @@ def compute_variability_hourly(url, variable, bounds, start_year, end_year):
     # --- 1. SEASONAL VARIABILITY ---
     # Captures the deficit caused by the regular annual/diurnal cycle
     clim = da.groupby("valid_time.dayofyear").mean("valid_time")
-    clim_norm = clim / clim.mean(dim="dayofyear")
+    clim_norm = (clim / clim.mean(dim="dayofyear")).compute()
 
     seasonal_imb = (clim_norm - 1).rename({"dayofyear": "time"})
     seasonal_var = calculate_maximum_deficit_dask(seasonal_imb, time_dim="time")
@@ -120,7 +120,7 @@ def run_variability_for_tile(
     minx, miny, maxx, maxy = tile
     bounds = (minx, miny, maxx, maxy)
 
-    ds = compute_variability_hourly(
+    ds = compute_variability_daily(
         url=ERA5_ZARR_URL,
         variable=variable,
         bounds=bounds,
