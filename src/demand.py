@@ -111,6 +111,7 @@ def compute_temperature_demand_indicator(
 def compute_demand_settlement_proximity(
     tile: Tile,
     paths: dict,
+    radius: float = DEMAND_WEIGHTING_BUFFER,  # degrees
 ) -> xr.DataArray:
     """
     Resample settlement data onto a buffered reference grid.
@@ -137,10 +138,10 @@ def compute_demand_settlement_proximity(
     minx, miny, maxx, maxy = tile
 
     buffer_bounds = (
-        minx - DEMAND_WEIGHTING_BUFFER,
-        miny - DEMAND_WEIGHTING_BUFFER,
-        maxx + DEMAND_WEIGHTING_BUFFER,
-        maxy + DEMAND_WEIGHTING_BUFFER,
+        minx - radius,
+        miny - radius,
+        maxx + radius,
+        maxy + radius,
     )
 
     # Create buffered reference grid
@@ -153,14 +154,19 @@ def compute_demand_settlement_proximity(
         settlement = clip_and_resample(built, ref)
 
     # Kernel radius in pixels of buffer zone
-    radius = int(DEMAND_WEIGHTING_BUFFER / REFERENCE_RESOLUTION)
+    radius = int(radius / REFERENCE_RESOLUTION)
 
     yy, xx = np.mgrid[-radius : radius + 1, -radius : radius + 1]
     dist = np.sqrt(xx**2 + yy**2)
-    dist[radius, radius] = 1.0  # avoid singularity
 
-    # Inverse distance weighting. NOTE the demand scale is affected by radius size of buffer zone
-    weights = 1.0 / dist
+    # Mask outside circle
+    mask = dist <= radius
+    dist[radius, radius] = 1.0  # Avoid singularity at center
+
+    # Circular inverse-distance weights
+    weights = np.zeros_like(dist, dtype="float32")
+    weights[mask] = 1.0 / dist[mask]
+    weights /= weights.sum()  # comparable scale across radius sizes
 
     # Convolution (Dask-compatible)
     weighted_buffered = xr.apply_ufunc(
@@ -201,8 +207,14 @@ def run_demand_potential_for_tile(
     # Compute demand potential as product of both indicators
     # Note: log1p used to compress large settlement values
     ##  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<
-    ds["demand_potential"] = (
-        np.log1p(ds["demand_settlement_proximity"]) * ds["demand_temperature_induced"]
+    # (1+temperature_indicator) to ensure non-zero even if no temperature-driven demand
+    # temperature as an extra stressor for demand
+    temperature_q95 = ds["demand_temperature_induced"].quantile(0.95)
+    quantile_normalised_demand_temperature_induced = xr.where(
+        temperature_q95 > 0, ds["demand_temperature_induced"] / temperature_q95, 0
+    ).clip(0, 1)
+    ds["demand_potential"] = (np.log1p(ds["demand_settlement_proximity"])) * (
+        1 + quantile_normalised_demand_temperature_induced
     )
 
     return ds
