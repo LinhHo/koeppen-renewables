@@ -52,7 +52,7 @@ def parse_args():
 
 
 def main():
-    client = Client()  # n_workers=2, threads_per_worker=2, memory_limit="12GB")
+    # client = Client()  # n_workers=2, threads_per_worker=2, memory_limit="12GB")
     args = parse_args()
     domain = (
         dict(zip(["minx", "miny", "maxx", "maxy"], args.bounds))
@@ -66,6 +66,10 @@ def main():
     tiles = generate_tiles(
         domain["minx"], domain["miny"], domain["maxx"], domain["maxy"], args.tile_size
     )
+
+    tmp_path = output_dir / "*.tmp"
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
 
     for tile in tiles:
         # Simplified naming: minx_miny_maxx_maxy
@@ -117,8 +121,8 @@ def main():
         else:
             print(f"Processed tile for {tile_str} exists. Skipping.")
 
-        client.restart()
-    client.close()
+        # client.restart()
+    # client.close()
 
 
 if __name__ == "__main__":

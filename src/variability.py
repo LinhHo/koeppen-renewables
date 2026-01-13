@@ -2,6 +2,7 @@ import xarray as xr
 import numpy as np
 import time
 from typing import Tuple
+from dask.distributed import Client
 
 from src.geo_processing import load_era5_variable
 from config import START_YEAR, END_YEAR, ERA5_ZARR_URL
@@ -49,6 +50,7 @@ def compute_variability_hourly(url, variable, bounds, start_year, end_year):
     Main pipeline: Loads data, calculates Seasonal (climatological)
     and Weather (interannual) variability.
     """
+    client = Client()
     da = load_era5_variable(url, variable, bounds, start_year, end_year)
     da = da.chunk(
         {"valid_time": -1, "latitude": 10, "longitude": 10}
