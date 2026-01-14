@@ -179,6 +179,10 @@ def compute_demand_settlement_proximity(
     return weighted_buffered
 
 
+# Temporarily put it here. Quantile normalisation seems to make clear jumps in demand potential on the map.
+quantile_normalised = False
+
+
 def run_demand_potential_for_tile(
     tile: Tile,
     paths: dict,
@@ -209,12 +213,18 @@ def run_demand_potential_for_tile(
     ##  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<
     # (1+temperature_indicator) to ensure non-zero even if no temperature-driven demand
     # temperature as an extra stressor for demand
-    temperature_q95 = ds["demand_temperature_induced"].quantile(0.95)
-    quantile_normalised_demand_temperature_induced = xr.where(
-        temperature_q95 > 0, ds["demand_temperature_induced"] / temperature_q95, 0
-    ).clip(0, 1)
+    if quantile_normalised:
+        temperature_q95 = ds["demand_temperature_induced"].quantile(0.95)
+        demand_temperature_induced = xr.where(
+            temperature_q95 > 0, ds["demand_temperature_induced"] / temperature_q95, 0
+        ).clip(0, 1)
+    else:
+        demand_temperature_induced = ds["demand_temperature_induced"] / np.max(
+            ds["demand_temperature_induced"]
+        )
+
     ds["demand_potential"] = (np.log1p(ds["demand_settlement_proximity"])) * (
-        1 + quantile_normalised_demand_temperature_induced
+        1 + demand_temperature_induced
     )
 
     return ds
