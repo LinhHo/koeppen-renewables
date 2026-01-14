@@ -297,7 +297,8 @@ def plot_zones_land(ds):
     )
 
     plt.subplots_adjust(bottom=0.25)
-    fig.savefig(FIG_DIR / "test_land_zones.png", dpi=300)
+    plt.tight_layout()
+    fig.savefig(FIG_DIR / "land_zones.png", dpi=300)
 
 
 # ============================================================
@@ -379,12 +380,105 @@ def plot_zones_offshore(ds):
     fig.savefig(FIG_DIR / "offshore_zones.png", dpi=300)
 
 
+# ============================================================
+# 4. Plot demand potential
+# ============================================================
+
+
+def plot_demand(ds, ds_processed):
+    print("Plotting demand potential...")
+
+    demand = ds["demand_potential"].where(ds_processed["solar_CF"].notnull())
+
+    lon = ds["longitude"]
+    lat = ds["latitude"]
+
+    # --------------------------------------------------
+    # Define demand categories
+    # --------------------------------------------------
+    DEMAND_COLORS = {
+        "no_data": ("white", "No data"),
+        "low": ("#f5bcee", "Low demand"),
+        "high": ("#bf60b4", "High demand"),
+    }
+
+    key_order = list(DEMAND_COLORS.keys())
+
+    # Threshold (33rd percentile → “high demand” above this)
+    q = demand.quantile(0.33)
+    demand_high = demand > q
+
+    # --------------------------------------------------
+    # Build category array (xarray-safe)
+    # --------------------------------------------------
+    category = xr.zeros_like(demand, dtype=int)
+
+    # valid demand points
+    valid = demand.notnull()
+
+    # threshold
+    q = demand.quantile(0.33)
+
+    category = xr.where(valid, 1, category)  # low demand
+    category = xr.where(demand > q, 2, category)  # high demand
+
+    # --------------------------------------------------
+    # Colormap & legend
+    # --------------------------------------------------
+    cmap = mcolors.ListedColormap([DEMAND_COLORS[k][0] for k in key_order])
+
+    legend_patches = [
+        mpatches.Patch(
+            facecolor=DEMAND_COLORS[k][0],
+            edgecolor="black",
+            linewidth=0.6,
+            label=DEMAND_COLORS[k][1],
+        )
+        for k in key_order
+    ]
+
+    # --------------------------------------------------
+    # Plot
+    # --------------------------------------------------
+    fig = plt.figure(figsize=(14, 7))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+
+    ax.pcolormesh(
+        lon,
+        lat,
+        category,
+        cmap=cmap,
+        transform=ccrs.PlateCarree(),
+    )
+
+    ax.coastlines()
+    ax.add_feature(cfeature.BORDERS, linewidth=0.4)
+    ax.add_feature(cfeature.LAND, facecolor="lightgray")
+    ax.add_feature(cfeature.OCEAN, facecolor="#E6F2FF")
+
+    ax.set_title("Demand potential (temperature × proximity)")
+
+    ax.legend(
+        handles=legend_patches,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=2,
+        frameon=False,
+    )
+
+    plt.tight_layout()
+    fig.savefig(FIG_DIR / "demand.png", dpi=300)
+
+
 def plot_all():
     fname = str(RESULTS_DIR / "processed_*.nc")
-    ds = xr.open_mfdataset(fname, combine="by_coords")
-    plot_histograms(ds)
-    plot_zones_land(ds)
-    plot_zones_offshore(ds)
+    ds_processed = xr.open_mfdataset(fname, combine="by_coords")
+    plot_histograms(ds_processed)
+    plot_zones_land(ds_processed)
+    plot_zones_offshore(ds_processed)
+    fname = str(RESULTS_DIR / "demand_potential_*.nc")
+    ds_demand = xr.open_mfdataset(fname, combine="by_coords")
+    plot_demand(ds_demand, ds_processed)
 
 
 # ============================================================
