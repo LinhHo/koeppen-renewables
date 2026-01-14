@@ -30,6 +30,7 @@ from src.abundance_atlas import resample_atlas
 from src.geo_processing import generate_tiles
 from src.variability import run_variability_for_tile
 from src.demand import run_demand_potential_for_tile
+from src.plots import plot_all
 from config import (
     GLOBAL_DOMAIN,
     TILE_SIZE,
@@ -155,6 +156,7 @@ def main():
             print(f"Demand potential tile for {tile_str} exists. Skipping.")
         gc.collect()
     # client.close()
+    plot_all()
 
 
 if __name__ == "__main__":
