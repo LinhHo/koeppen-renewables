@@ -32,8 +32,6 @@ from config import (
     ERA5_ZARR_URL,
     REFERENCE_RESOLUTION,
     DEMAND_WEIGHTING_BUFFER,
-    START_YEAR,
-    END_YEAR,
 )
 
 
@@ -52,6 +50,8 @@ alpha_cool = 0.7  # kWh / day / °C
 
 def compute_temperature_demand_indicator(
     bounds: Tile,
+    start_year: int,
+    end_year: int,
 ):
     """
     Compute climate-driven electricity demand intensity from temperature.
@@ -78,8 +78,8 @@ def compute_temperature_demand_indicator(
         ERA5_ZARR_URL,
         "t2m",
         bounds=bounds,
-        start_year=START_YEAR,
-        end_year=END_YEAR,
+        start_year=start_year,
+        end_year=end_year,
     )
 
     # Chunk spatially; keep full time for climatology
@@ -186,6 +186,8 @@ quantile_normalised = False
 def run_demand_potential_for_tile(
     tile: Tile,
     paths: dict,
+    start_year: int,
+    end_year: int,
 ) -> xr.Dataset:
     """
     Compute both climate-driven and settlement-driven demand indicators for one tile.
@@ -199,7 +201,9 @@ def run_demand_potential_for_tile(
     ds = xr.Dataset()
 
     print("  -> Computing climate-driven demand indicator...")
-    ds["demand_temperature_induced"] = compute_temperature_demand_indicator(bounds)
+    ds["demand_temperature_induced"] = compute_temperature_demand_indicator(
+        bounds, start_year, end_year
+    )
 
     print("  -> Computing settlement-driven demand potential...")
     ds["demand_settlement_proximity"] = (

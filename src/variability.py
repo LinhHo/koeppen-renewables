@@ -6,7 +6,7 @@ from typing import Tuple
 # from dask.distributed import Client
 
 from src.geo_processing import load_era5_variable
-from config import START_YEAR, END_YEAR, ERA5_ZARR_URL
+from config import ERA5_ZARR_URL
 
 
 Tile = Tuple[float, float, float, float]
@@ -104,6 +104,8 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
 def run_variability_for_tile(
     tile: Tile,
     variable: str,
+    start_year: int,
+    end_year: int,
 ):
     """
     Compute ERA5 seasonal and weather variability for one tile.
@@ -124,7 +126,7 @@ def run_variability_for_tile(
         url=ERA5_ZARR_URL,
         variable=variable,
         bounds=bounds,
-        start_year=START_YEAR,
-        end_year=END_YEAR,
+        start_year=start_year,
+        end_year=end_year,
     )
     return ds

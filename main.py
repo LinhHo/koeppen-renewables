@@ -49,6 +49,14 @@ def parse_args():
     parser.add_argument(
         "--tile-size", type=float, default=TILE_SIZE, help="Tile size in degrees"
     )
+    parser.add_argument(
+        "--years",
+        nargs=2,
+        type=int,
+        metavar=("START_YEAR", "END_YEAR"),
+        default=(START_YEAR, END_YEAR),
+        help="Start and end year",
+    )
     return parser.parse_args()
 
 
@@ -60,6 +68,7 @@ def main():
         if args.bounds
         else GLOBAL_DOMAIN
     )
+    start_year, end_year = args.years
 
     output_dir = REPO_ROOT / "results" / "automatic"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -76,7 +85,7 @@ def main():
         client.restart()
         # Simplified naming: minx_miny_maxx_maxy
         tile_str = "_".join(map(str, tile))
-        out_file = output_dir / f"processed_{tile_str}_{START_YEAR}_{END_YEAR}.nc"
+        out_file = output_dir / f"processed_{tile_str}_{start_year}_{end_year}.nc"
 
         if not out_file.exists():
             print(f"\n--- Processing Tile: {tile_str} ---")
@@ -88,7 +97,7 @@ def main():
                 # 2. Variability (Wind & Solar)
                 for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
                     print(f"  -> Computing {label} variability...")
-                    ds_var = run_variability_for_tile(tile, var)
+                    ds_var = run_variability_for_tile(tile, var, start_year, end_year)
                     # Merge into the main dataset for this tile
                     ds_main = xr.merge(
                         [
@@ -119,14 +128,16 @@ def main():
         # 3. Demand Potential
         # incl. demand_potential, demand_temperature_induced, demand_settlement_proximity
         demand_out = (
-            output_dir / f"demand_potential_{tile_str}_{START_YEAR}_{END_YEAR}.nc"
+            output_dir / f"demand_potential_{tile_str}_{start_year}_{end_year}.nc"
         )
 
         if not demand_out.exists():
             print(f"\n--- Processing Tile: {tile_str} ---")
             try:
                 print("  -> Computing demand potential...")
-                ds_demand = run_demand_potential_for_tile(tile, PATHS)
+                ds_demand = run_demand_potential_for_tile(
+                    tile, PATHS, start_year, end_year
+                )
 
                 print("  -> Saving demand potential...")
                 # Atomic Save (HPC Safe)
