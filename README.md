@@ -13,10 +13,6 @@ This repository produces renewable zone classification, inspired by Koeppen clim
 4. Process global tiles
 
 ### Usage
-```bash
-conda env create -f environment.yaml
-conda activate koeppen-renewables
-```
 
 Download the necessary data and put them in `/resources/user` 
 - PV potential global https://globalsolaratlas.info/download/world  
@@ -30,13 +26,12 @@ Warning: the wind atlas file is heavy, 14.8 GB.
 
 - Global Human Settlement Layer (GHSL) Total built-up surface and the component of non-residential (NRES) built-up surface (m2) GHS-BUILT-S (2023) https://human-settlement.emergency.copernicus.eu/ghs_buS2023.php. Coordinate system WGS84, resolution 30 arcsec, for the year 2023. Filename is `GHS_BUILT_S_E2020_GLOBE_R2023A_4326_30ss_V1_0_R8_C29.tif`.
 
-- ERA5 daily data are processed directly from Earth Data Destine using zarr format. Token is required to download from EarthDatahub. You can register and get the token in https://earthdatahub.destine.eu/getting-started. Put this token in `.env`
+- ERA5 data are processed directly from Earth Data Destine using zarr format (convert from hourly to daily data). Token is required to download ERA5 from EarthDatahub. You can register and get your token in https://earthdatahub.destine.eu/getting-started. Put this token in `.env`
 ```.env
 ERA5_TOKEN = "your-token-here"
 ```
 To upgrade the access to EarthDatahub, for example for large data use for academic purpose, check ou https://platform.destine.eu/access-policy-upgrade/.
 
-This repository computes by 20×20° tiles:
 
 For a quick test for a tile around the Netherlands.
 
@@ -58,10 +53,11 @@ For example, to check if the code runs correctly around the change of Prime Meri
 ```bash
 pixi run python main.py --bounds -20 -10 10 20
 ```
-Note that the results can return tiles outside of the given bounds in increments of 20° from the starting lat/lon.
 
-Specify the tile size by, the default (in config) is 20 degrees.
+This repository computes by 20×20° tiles and default years in `config.py`. Note that the results can return tiles outside of the given bounds in increments of 20° from the starting lat/lon.
+To specify the tile size and years (start and end years), add options
 ```bash
-pixi run python main.py --bounds -20 -10 10 20 --tile-size 5
+pixi run python main.py --bounds -20 -10 10 20 --tile-size 5 --years 2020 2025s
 
 ```
+
