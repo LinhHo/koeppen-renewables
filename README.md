@@ -1,6 +1,6 @@
-## Koeppen Renewable Energy Potential
 
-This repository produces renewable zone classification. An example is as below.
+
+This repository produces global data for: 
 
 - Wind and solar power abundance (atlases)
 - Seasonal and weather variability (ERA5)
