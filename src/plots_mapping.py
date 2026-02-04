@@ -10,6 +10,8 @@ import regionmask
 import seaborn as sns
 import xarray as xr
 
+from itertools import product
+
 
 # Get mask of offshore areas only (mask out solar_CF does not work because it cuts off above ~60N)
 def mask_onshore(ds):
@@ -20,18 +22,20 @@ def mask_onshore(ds):
     return land_mask.notnull()
 
 
-def classify_land_zones_detailed(ds):
+def classify_land_zones_detailed(ds, ds_demand):
     """
     Classify each pixel into a 4-character label based on four factors:
       - Solar abundance: H (high), M (medium), or L (low) based on tertiles
       - Solar reliability: R (reliable) or U (unreliable)
       - Wind abundance: H (high), M (medium), or L (low) based on tertiles
       - Wind reliability: R (reliable) or U (unreliable)
+      - Demand: h (high demand) or l (low demand)
 
     Example labels:
       - "HRHR" = High solar, Reliable solar, High wind, Reliable wind
       - "LULU" = Low solar, Unreliable solar, Low wind, Unreliable wind
       - "MRLU" = Medium solar, Reliable solar, Low wind, Unreliable wind
+      - 'LxLxH' = 'Low both, high demand'
 
     Returns the input dataset with a new "zones" variable added.
 
@@ -49,6 +53,10 @@ def classify_land_zones_detailed(ds):
     q_solar = solar_cf.quantile([0.33, 0.66])
     q_wind = wind_cf.quantile([0.33, 0.66])
 
+    print(
+        f"Threshold capacity factor for soar are: {q_solar[0]:.2f}, {q_solar[1]:.2f} \n and for wind onshore are {q_wind[0]:.2f}, {q_wind[1]:.2f}"
+    )
+
     solar_low = (solar_cf < q_solar.sel(quantile=0.33)) | solar_cf.isnull()
     solar_mid = (solar_cf >= q_solar.sel(quantile=0.33)) & (
         solar_cf < q_solar.sel(quantile=0.66)
@@ -64,8 +72,8 @@ def classify_land_zones_detailed(ds):
     ###
     # Reliability (reliable, unreliable)
     ###
-    solar_rel_thresh = solar_seasonal_var.quantile(0.33)
-    wind_rel_thresh = wind_seasonal_var.quantile(0.33)
+    solar_rel_thresh = solar_seasonal_var.where(land).quantile(0.33)
+    wind_rel_thresh = wind_seasonal_var.where(land).quantile(0.33)
 
     solar_reliable = solar_seasonal_var < solar_rel_thresh
     solar_unreliable = solar_seasonal_var >= solar_rel_thresh
@@ -73,32 +81,60 @@ def classify_land_zones_detailed(ds):
     wind_reliable = wind_seasonal_var < wind_rel_thresh
     wind_unreliable = wind_seasonal_var >= wind_rel_thresh
 
+    print(
+        f"Thresholds for wind and solar seasonal variability are: {solar_rel_thresh*365:.2f} days and {wind_rel_thresh*365:.2f} days."
+    )
+
+    ###
+    # Demand
+    ###
+    demand_thresh = ds_demand.quantile(0.8).values
+    demand_low = ds_demand < demand_thresh
+    demand_high = ds_demand >= demand_thresh
+    print(f"Threshold for demand is {np.expm1(demand_thresh):.2f} m2 per grid cell")
+
     ###
     # Build final raster of "HRHR"-style labels
     ###
     zones = np.full(solar_cf.shape, "", dtype=object)
 
-    for s_ab_mask, s_ab_char in [
-        (solar_high, "H"),
-        (solar_mid, "M"),
-        (solar_low, "L"),
-    ]:
-        for s_rel_mask, s_rel_char in [
-            (solar_reliable, "R"),
-            (solar_unreliable, "U"),
-        ]:
-            for w_ab_mask, w_ab_char in [
-                (wind_high, "H"),
-                (wind_mid, "M"),
-                (wind_low, "L"),
-            ]:
-                for w_rel_mask, w_rel_char in [
-                    (wind_reliable, "R"),
-                    (wind_unreliable, "U"),
-                ]:
-                    label = f"{s_ab_char}{s_rel_char}{w_ab_char}{w_rel_char}"
-                    mask = land & s_ab_mask & s_rel_mask & w_ab_mask & w_rel_mask
-                    zones[mask.values] = label
+    LABEL_DICT = [
+        [(solar_high, "H"), (solar_mid, "M"), (solar_low, "L")],
+        [(solar_reliable, "R"), (solar_unreliable, "U")],
+        [(wind_high, "H"), (wind_mid, "M"), (wind_low, "L")],
+        [(wind_reliable, "R"), (wind_unreliable, "U")],
+        [(demand_high, "h"), (demand_low, "l")],
+    ]
+
+    for combo in product(*LABEL_DICT):
+        masks, chars = zip(*combo)
+        label = "".join(chars)
+        mask = land
+        for m in masks:
+            mask = mask & m  # do NOT use &=, it modifies land mask
+        zones[mask.values] = label
+
+    # for s_ab_mask, s_ab_char in [
+    #     (solar_high, "H"),
+    #     (solar_mid, "M"),
+    #     (solar_low, "L"),
+    # ]:
+    #     for s_rel_mask, s_rel_char in [
+    #         (solar_reliable, "R"),
+    #         (solar_unreliable, "U"),
+    #     ]:
+    #         for w_ab_mask, w_ab_char in [
+    #             (wind_high, "H"),
+    #             (wind_mid, "M"),
+    #             (wind_low, "L"),
+    #         ]:
+    #             for w_rel_mask, w_rel_char in [
+    #                 (wind_reliable, "R"),
+    #                 (wind_unreliable, "U"),
+    #             ]:
+    #                 label = f"{s_ab_char}{s_rel_char}{w_ab_char}{w_rel_char}"
+    #                 mask = land & s_ab_mask & s_rel_mask & w_ab_mask & w_rel_mask
+    #                 zones[mask.values] = label
 
     zones_da = xr.DataArray(
         zones,
@@ -115,7 +151,7 @@ def _pattern_matches(zone_label, pattern):
     Pattern can use 'x' as wildcard for any character.
     E.g., "LxHR" matches "LRHR", "LUHR", etc.
     """
-    if len(zone_label) != 4 or len(pattern) != 4:
+    if len(zone_label) != 5 or len(pattern) != 5:
         return False
     for zc, pc in zip(zone_label, pattern):
         if pc != "x" and zc != pc:
@@ -123,7 +159,9 @@ def _pattern_matches(zone_label, pattern):
     return True
 
 
-def plot_land_zones_map(ds, groups, out_path=None):
+def plot_land_zones_map(
+    ds, groups, out_path=None, figsize=(15, 9), legend_anchor=(0.5, -0.25)
+):
     """
     Plot map from pre-classified per-pixel labels using group definitions.
 
@@ -177,19 +215,24 @@ def plot_land_zones_map(ds, groups, out_path=None):
     ]
 
     # Preserve original orientation handling
-    ds_sorted = ds.sortby("latitude")
+    # ds_sorted = ds.sortby("latitude")
     rgb_plot = np.flipud(rgb)
 
-    lat = ds_sorted["latitude"]
-    lon = ds_sorted["longitude"]
+    # lat = ds_sorted["latitude"]
+    # lon = ds_sorted["longitude"]
 
-    fig = plt.figure(figsize=(15, 8))
-    ax = plt.axes(projection=ccrs.PlateCarree())
-
+    # def plot_robinson(colours, patches, title_suffix=None):
+    fig = plt.figure(figsize=figsize)
+    ax = plt.axes(projection=ccrs.Robinson())
+    ax.set_global()
+    ax.set_extent(
+        [-180, 180, -60, 80],  # lon_min, lon_max, lat_min, lat_max
+        crs=ccrs.PlateCarree(),
+    )
     ax.imshow(
         rgb_plot,
         origin="lower",
-        extent=[lon.min(), lon.max(), lat.min(), lat.max()],
+        extent=[-180, 180, -60, 80],
         transform=ccrs.PlateCarree(),
     )
 
@@ -198,17 +241,65 @@ def plot_land_zones_map(ds, groups, out_path=None):
     ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=-1)
     ax.add_feature(cfeature.OCEAN, facecolor="lightblue", zorder=-1)
 
-    ax.set_title("Koeppen renewable zones – Land", fontsize=14)
+    # ax.set_title(f"Köppen renewable zones – {title_suffix}", fontsize=14)
+
     ax.legend(
         handles=patches,
         loc="lower center",
-        bbox_to_anchor=(0.5, -0.25),
+        bbox_to_anchor=legend_anchor,
         ncol=3,
         frameon=False,
     )
+    # Draw gridlines
+    gl = ax.gridlines(
+        draw_labels=True,
+        linewidth=0.5,
+        color="gray",
+        alpha=0.6,
+        linestyle="--",
+    )
+
+    # Choose which labels to show
+    gl.top_labels = False
+    gl.right_labels = False
+    gl.bottom_labels = True
+    gl.left_labels = True
+
+    # Set grid spacing
+    gl.xlocator = plt.FixedLocator(range(-180, 181, 30))  # longitude lines every 30°
+    gl.ylocator = plt.FixedLocator(range(-90, 91, 20))  # latitude lines every 15°
 
     plt.subplots_adjust(bottom=0.25)
     plt.tight_layout()
+    # fig.savefig(FIG_DIR / "land_zones.png", dpi=300)
+    plt.show()
+
+    # fig = plt.figure(figsize=(15, 8))
+    # ax = plt.axes(projection=ccrs.PlateCarree())
+
+    # ax.imshow(
+    #     rgb_plot,
+    #     origin="lower",
+    #     extent=[lon.min(), lon.max(), lat.min(), lat.max()],
+    #     transform=ccrs.PlateCarree(),
+    # )
+
+    # ax.coastlines()
+    # ax.add_feature(cfeature.BORDERS, linewidth=0.4)
+    # ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=-1)
+    # ax.add_feature(cfeature.OCEAN, facecolor="lightblue", zorder=-1)
+
+    # ax.set_title("Koeppen renewable zones – Land", fontsize=14)
+    # ax.legend(
+    #     handles=patches,
+    #     loc="lower center",
+    #     bbox_to_anchor=(0.5, -0.25),
+    #     ncol=3,
+    #     frameon=False,
+    # )
+
+    # plt.subplots_adjust(bottom=0.25)
+    # plt.tight_layout()
     if out_path:
         fig.savefig(out_path, dpi=300)
     return fig, ax
@@ -297,3 +388,114 @@ def groups_cmap(groups):
     cmap = {k: mcolors.to_rgb(v[0]) for k, v in groups.items()}
     palette = sns.color_palette(cmap.values())
     return labeled_color_palette(palette, labels=[k for k in groups.keys()])
+
+
+from itertools import product
+
+
+def expand_x(label, replacements=("U", "R")):
+    """
+    Expand a label containing 'x' into all combinations
+    where 'x' is replaced by elements of `replacements`.
+    """
+    choices = [replacements if ch == "x" else (ch,) for ch in label]
+    return ["".join(p) for p in product(*choices)]
+
+
+def get_base_and_subgroup(ds_zones, groups_dict):
+    """
+    ds_zones: contains labels (e.g., 'HRHRh', 'HUHUh', etc.) for each grid cell
+    Given a label, return its base group and subgroup.
+    E.g., for 'HRHRh', return ('B', 'B_u')
+    """
+    # # small detailed groups with _ul (reliable, demand)
+    label_to_maingroup = {}
+    label_tosubgroup = {}
+
+    for group, (_, _, sublabels) in groups_dict.items():
+        base_group = group.split("_")[0]  # B, W, Ws, S, Sw, P
+
+        for lbl in sublabels:
+            for expanded in expand_x(lbl):
+                label_to_maingroup[expanded] = base_group
+                label_tosubgroup[expanded] = group
+
+    ds_grouped = ds_zones[["zones"]].copy()  # xr.DataArray
+
+    zones = ds_grouped["zones"]
+    zones_np = zones.data  # safer than .values
+
+    out_base_groups = np.full(zones.shape, None, dtype=object)
+    out_subgroups = np.full(zones.shape, None, dtype=object)
+
+    # base groups
+    for k, v in label_to_maingroup.items():
+        out_base_groups[zones_np == k] = v
+
+    # subgroups
+    for k, v in label_tosubgroup.items():
+        out_subgroups[zones_np == k] = v
+
+    ds_grouped["zones_base_grouped"] = xr.DataArray(
+        out_base_groups,
+        coords=ds_grouped["zones"].coords,
+        dims=ds_grouped["zones"].dims,
+    )
+
+    ds_grouped["zones_subgrouped"] = xr.DataArray(
+        out_subgroups,
+        coords=ds_grouped["zones"].coords,
+        dims=ds_grouped["zones"].dims,
+    )
+
+    # Stats count base groups and subgroups
+    counts = (
+        ds_grouped[["zones_base_grouped", "zones_subgrouped"]]
+        .to_dataframe()
+        .dropna()
+        .groupby(["zones_base_grouped", "zones_subgrouped"])
+        .size()
+    )
+
+    percentage_df = (counts / counts.sum() * 100).reset_index(name="percentage")
+
+    return ds_grouped, percentage_df
+
+
+def plot_stats_subgroups(percentage_df, groups_dict, title_suffix=""):
+    counts_stacked = percentage_df.pivot(
+        index="zones_base_grouped",
+        columns="zones_subgrouped",
+        values="percentage",
+    ).fillna(0)
+
+    ordered_subgroups = [g for g in groups_dict.keys() if g in counts_stacked.columns]
+
+    counts_stacked = counts_stacked[ordered_subgroups]
+
+    colors = [groups_dict[col][0] for col in counts_stacked.columns]
+
+    import matplotlib.pyplot as plt
+
+    ax = counts_stacked.plot(
+        kind="bar",
+        stacked=True,
+        color=colors,
+        edgecolor="none",
+        figsize=(8, 5),
+    )
+
+    ax.set_ylabel("Percentage of grid cells")
+    ax.set_xlabel("Main renewable zone")
+    ax.set_title(f"Renewable zones by group – {title_suffix}")
+
+    ax.legend(
+        title=None,
+        ncol=4,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.15),
+        frameon=False,
+    )
+
+    plt.tight_layout()
+    plt.show()
