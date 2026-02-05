@@ -9,9 +9,9 @@ import numpy as np
 import regionmask
 import seaborn as sns
 import xarray as xr
+import colorsys
 
 from itertools import product
-
 
 # # Get mask of offshore areas only (mask out solar_CF does not work because it cuts off above ~60N)
 # def mask_onshore(ds):
@@ -251,6 +251,18 @@ def classify_land_zones_detailed(
 #     return True
 
 
+def dirty(color):
+    r, g, b = mcolors.to_rgb(color)
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    return colorsys.hsv_to_rgb(h, s * 0.5, v * 0.7)
+
+
+def light(color):
+    r, g, b = mcolors.to_rgb(color)
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    return colorsys.hsv_to_rgb(h, s * 0.4, min(1, v * 1.1))
+
+
 def _pattern_matches(zone_label, pattern):
     """
     Check if a 4-character zone label matches a pattern.
@@ -352,8 +364,8 @@ def plot_land_zones_map(
 
     ax.coastlines()
     ax.add_feature(cfeature.BORDERS, linewidth=0.4)
-    ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=-1)
-    ax.add_feature(cfeature.OCEAN, facecolor="lightblue", zorder=-1)
+    # ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=-1)
+    # ax.add_feature(cfeature.OCEAN, facecolor="lightblue", zorder=-1)
 
     # ax.set_title(f"Köppen renewable zones – {title_suffix}", fontsize=14)
 
@@ -563,8 +575,6 @@ def plot_stats_subgroups(percentage_df, groups_dict, title_suffix=""):
 
     colors = [groups_dict[col][0] for col in counts_stacked.columns]
 
-    import matplotlib.pyplot as plt
-
     ax = counts_stacked.plot(
         kind="bar",
         stacked=True,
@@ -587,3 +597,4 @@ def plot_stats_subgroups(percentage_df, groups_dict, title_suffix=""):
 
     plt.tight_layout()
     plt.show()
+

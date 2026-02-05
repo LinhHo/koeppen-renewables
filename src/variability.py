@@ -105,7 +105,7 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
         {
             "seasonal_variability": seasonal_var,
             "weather_variability_max": weather_var_per_year.max("year"),
-            "weather_variability_mean": weather_var_per_year.mean("year"),
+            "weather_variability": weather_var_per_year.mean("year"),
             "weather_variability_p95": weather_var_per_year.quantile(0.95, dim="year"),
             "resource_drought": weather_var_per_year.sel(year=drought_year),
         }
