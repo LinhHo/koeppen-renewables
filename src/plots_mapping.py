@@ -13,16 +13,44 @@ import xarray as xr
 from itertools import product
 
 
+# # Get mask of offshore areas only (mask out solar_CF does not work because it cuts off above ~60N)
+# def mask_onshore(ds):
+#     ds = ds["wind_CF"]
+#     land_mask = regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(
+#         ds.longitude, ds.latitude
+#     )
+#     return land_mask.notnull()
+
+
 # Get mask of offshore areas only (mask out solar_CF does not work because it cuts off above ~60N)
-def mask_onshore(ds):
+def mask_land(ds):
     ds = ds["wind_CF"]
+    has_data = ds.where(ds != 0).notnull()
     land_mask = regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(
         ds.longitude, ds.latitude
     )
-    return land_mask.notnull()
+    return has_data & land_mask.notnull()
 
 
-def classify_land_zones_detailed(ds, ds_demand):
+# Get mask of offshore areas only (mask out solar_CF does not work because it cuts off above ~60N)
+def mask_offshore(ds):
+    ds = ds["wind_CF"]
+    has_data = ds.where(ds != 0).notnull()
+    land_mask = regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(
+        ds.longitude, ds.latitude
+    )
+    is_ocean = land_mask.isnull()
+    return has_data & is_ocean
+
+
+def classify_land_zones_detailed(
+    ds,
+    ds_demand,
+    reliable="seasonal",
+    add_offshore=False,
+    threshold_cf=None,
+    threshold_variability_quantiles=0.66,
+):
     """
     Classify each pixel into a 4-character label based on four factors:
       - Solar abundance: H (high), M (medium), or L (low) based on tertiles
@@ -40,58 +68,126 @@ def classify_land_zones_detailed(ds, ds_demand):
     Returns the input dataset with a new "zones" variable added.
 
     """
-    solar_cf = ds["solar_CF"].compute()
-    wind_cf = ds["wind_CF"].compute()
-    solar_seasonal_var = ds["solar_seasonal_variability"].compute()
-    wind_seasonal_var = ds["wind_seasonal_variability"].compute()
+    print(f"Computing variability metrics based on {reliable} variability...")
+    solar_variability = ds[f"solar_{reliable}_variability"].compute()
+    wind_variability = ds[f"wind_{reliable}_variability"]  # .compute()
 
-    land = mask_onshore(ds)
+    ###
+    # Land
+    ###==============================
+
+    land = mask_land(ds)
 
     ###
     # Abundance (high, medium, low)
     ###
-    q_solar = solar_cf.quantile([0.33, 0.66])
-    q_wind = wind_cf.quantile([0.33, 0.66])
+
+    solar_cf = ds["solar_CF"].compute()
+    onshore_cf = ds["wind_CF"].where(land).compute()
+    onshore_variability = wind_variability.where(land).compute()
+
+    if threshold_cf is None:
+        print("Using quantile-based thresholds for abundance classification.")
+        threshold_cf = {
+            "solar": {
+                "high": solar_cf.quantile(0.66),
+                "low": solar_cf.quantile(0.33).values,
+            },
+            "wind_onshore": {
+                "high": onshore_cf.quantile(0.66).values,
+                "low": onshore_cf.quantile(0.33).values,
+            },
+        }
+    else:
+        print("Using fixed thresholds for abundance classification.")
+
+    threshold_variability = {
+        "solar": solar_variability.quantile(
+            threshold_variability_quantiles
+        ).values,  # 3/12,
+        "wind_onshore": onshore_variability.quantile(
+            threshold_variability_quantiles
+        ).values,  # 1/12,
+    }
 
     print(
-        f"Threshold capacity factor for soar are: {q_solar[0]:.2f}, {q_solar[1]:.2f} \n and for wind onshore are {q_wind[0]:.2f}, {q_wind[1]:.2f}"
+        f"Threshold capacity factor for solar are: {threshold_cf['solar']['low']:.2f}, {threshold_cf['solar']['high']:.2f} \n and for wind onshore are {threshold_cf['wind_onshore']['low']:.2f}, {threshold_cf['wind_onshore']['high']:.2f}"
     )
 
-    solar_low = (solar_cf < q_solar.sel(quantile=0.33)) | solar_cf.isnull()
-    solar_mid = (solar_cf >= q_solar.sel(quantile=0.33)) & (
-        solar_cf < q_solar.sel(quantile=0.66)
+    solar_low = (solar_cf < threshold_cf["solar"]["low"]) | solar_cf.isnull()
+    solar_mid = (solar_cf >= threshold_cf["solar"]["low"]) & (
+        solar_cf < threshold_cf["solar"]["high"]
     )
-    solar_high = solar_cf >= q_solar.sel(quantile=0.66)
-
-    wind_low = wind_cf < q_wind.sel(quantile=0.33)
-    wind_mid = (wind_cf >= q_wind.sel(quantile=0.33)) & (
-        wind_cf < q_wind.sel(quantile=0.66)
+    solar_high = solar_cf >= threshold_cf["solar"]["high"]
+    wind_low = onshore_cf < threshold_cf["wind_onshore"]["low"]
+    wind_mid = (onshore_cf >= threshold_cf["wind_onshore"]["low"]) & (
+        onshore_cf < threshold_cf["wind_onshore"]["high"]
     )
-    wind_high = wind_cf >= q_wind.sel(quantile=0.66)
+    wind_high = onshore_cf >= threshold_cf["wind_onshore"]["high"]
 
     ###
     # Reliability (reliable, unreliable)
     ###
-    solar_rel_thresh = solar_seasonal_var.where(land).quantile(0.33)
-    wind_rel_thresh = wind_seasonal_var.where(land).quantile(0.33)
 
-    solar_reliable = solar_seasonal_var < solar_rel_thresh
-    solar_unreliable = solar_seasonal_var >= solar_rel_thresh
+    solar_reliable = solar_variability < threshold_variability["solar"]
+    solar_unreliable = solar_variability >= threshold_variability["solar"]
 
-    wind_reliable = wind_seasonal_var < wind_rel_thresh
-    wind_unreliable = wind_seasonal_var >= wind_rel_thresh
-
+    wind_reliable = onshore_variability < threshold_variability["wind_onshore"]
+    wind_unreliable = onshore_variability >= threshold_variability["wind_onshore"]
     print(
-        f"Thresholds for wind and solar seasonal variability are: {solar_rel_thresh*365:.2f} days and {wind_rel_thresh*365:.2f} days."
+        f"Thresholds quantile {threshold_variability_quantiles} for wind and solar {reliable} variability are: {threshold_variability['solar']*365:.2f} days and {threshold_variability['wind_onshore']*365:.2f} days."
     )
 
     ###
-    # Demand
+    # Offshore
+    ###==============================
+    if add_offshore:
+        offshore = mask_offshore(ds)
+        offshore_cf = ds["wind_CF"].where(offshore).compute()
+        offshore_variability = wind_variability.where(offshore).compute()
+
+        if "wind_offshore" not in threshold_cf.keys():
+            print(
+                "Using quantile thresholds 0.5 for offshore wind abundance classification."
+            )
+            threshold_cf["wind_offshore"] = {
+                "high": offshore_cf.quantile(0.5).values,
+                # "low": offshore_cf.quantile(0.33).values,
+            }
+        else:
+            print("Using fixed thresholds for offshore wind abundance classification.")
+
+        threshold_variability["wind_offshore"] = offshore_variability.quantile(
+            threshold_variability_quantiles
+        ).values
+        # : {threshold_cf['wind_offshore']['low']:.2f}
+        print(
+            f"Threshold capacity factor for wind offshore is {threshold_cf['wind_offshore']['high']:.2f}, and variability threshold is {threshold_variability['wind_offshore']*365:.2f} days."
+        )
+
+        # wind_offshore_low = offshore_cf < threshold_cf["wind_offshore"]["low"]
+        # wind_offshore_mid = (offshore_cf >= threshold_cf["wind_offshore"]["low"]) & (
+        #     offshore_cf < threshold_cf["wind_offshore"]["high"]
+        # )
+        wind_offshore_high = offshore_cf >= threshold_cf["wind_offshore"]["high"]
+        wind_offshore_low = offshore_cf < threshold_cf["wind_offshore"]["high"]
+
+        wind_offshore_reliable = (
+            offshore_variability < threshold_variability["wind_offshore"]
+        )
+        wind_offshore_unreliable = (
+            offshore_variability >= threshold_variability["wind_offshore"]
+        )
+
     ###
+    # Demand
+    ###==============================
     demand_thresh = ds_demand.quantile(0.8).values
     demand_low = ds_demand < demand_thresh
     demand_high = ds_demand >= demand_thresh
-    print(f"Threshold for demand is {np.expm1(demand_thresh):.2f} m2 per grid cell")
+    print(
+        f"Threshold 0.8 quantile for demand is {np.expm1(demand_thresh):.2f} m2 per grid cell"
+    )
 
     ###
     # Build final raster of "HRHR"-style labels
@@ -114,27 +210,23 @@ def classify_land_zones_detailed(ds, ds_demand):
             mask = mask & m  # do NOT use &=, it modifies land mask
         zones[mask.values] = label
 
-    # for s_ab_mask, s_ab_char in [
-    #     (solar_high, "H"),
-    #     (solar_mid, "M"),
-    #     (solar_low, "L"),
-    # ]:
-    #     for s_rel_mask, s_rel_char in [
-    #         (solar_reliable, "R"),
-    #         (solar_unreliable, "U"),
-    #     ]:
-    #         for w_ab_mask, w_ab_char in [
-    #             (wind_high, "H"),
-    #             (wind_mid, "M"),
-    #             (wind_low, "L"),
-    #         ]:
-    #             for w_rel_mask, w_rel_char in [
-    #                 (wind_reliable, "R"),
-    #                 (wind_unreliable, "U"),
-    #             ]:
-    #                 label = f"{s_ab_char}{s_rel_char}{w_ab_char}{w_rel_char}"
-    #                 mask = land & s_ab_mask & s_rel_mask & w_ab_mask & w_rel_mask
-    #                 zones[mask.values] = label
+    if add_offshore:
+        LABEL_DICT_OFFSHORE = [
+            [
+                (wind_offshore_high, "H"),
+                # (wind_offshore_mid, "M"),
+                (wind_offshore_low, "L"),
+            ],
+            [(wind_offshore_reliable, "R"), (wind_offshore_unreliable, "U")],
+            [(demand_high, "h"), (demand_low, "l")],
+        ]
+        for combo in product(*LABEL_DICT_OFFSHORE):
+            masks, chars = zip(*combo)
+            label = "offshore_" + "".join(chars)  # 'O' prefix for offshore
+            mask = offshore
+            for m in masks:
+                mask = mask & m  # do NOT use &=, it modifies land mask
+            zones[mask.values] = label
 
     zones_da = xr.DataArray(
         zones,
@@ -145,17 +237,38 @@ def classify_land_zones_detailed(ds, ds_demand):
     return ds.assign(zones=zones_da)
 
 
+# def _pattern_matches(zone_label, pattern):
+#     """
+#     Check if a 4-character zone label matches a pattern.
+#     Pattern can use 'x' as wildcard for any character.
+#     E.g., "LxHR" matches "LRHR", "LUHR", etc.
+#     """
+#     if len(zone_label) != 5 or len(pattern) != 5:
+#         return False
+#     for zc, pc in zip(zone_label, pattern):
+#         if pc != "x" and zc != pc:
+#             return False
+#     return True
+
+
 def _pattern_matches(zone_label, pattern):
     """
     Check if a 4-character zone label matches a pattern.
     Pattern can use 'x' as wildcard for any character.
     E.g., "LxHR" matches "LRHR", "LUHR", etc.
+    if offshore then the pattern should also start with offshore and the rest should match
     """
-    if len(zone_label) != 5 or len(pattern) != 5:
+    if zone_label.startswith("offshore_"):
+        zone_label = zone_label[len("offshore_") :]
+        for zc, pc in zip(zone_label, pattern[len("offshore_") :]):
+            if pc != "x" and zc != pc:
+                return False
+    elif len(zone_label) != 5 or len(pattern) != 5:
         return False
-    for zc, pc in zip(zone_label, pattern):
-        if pc != "x" and zc != pc:
-            return False
+    else:
+        for zc, pc in zip(zone_label, pattern):
+            if pc != "x" and zc != pc:
+                return False
     return True
 
 
@@ -182,7 +295,8 @@ def plot_land_zones_map(
     """
     zones = ds["zones"].values
 
-    rgb = np.ones((zones.shape[0], zones.shape[1], 3), dtype=float)
+    # rgb = np.ones((zones.shape[0], zones.shape[1], 3), dtype=float)
+    rgb = np.full((zones.shape[0], zones.shape[1], 3), fill_value=np.nan, dtype=float)
 
     # Collect all unique zone labels in the data (excluding empty strings)
     unique_zones = set(zones.flatten())
@@ -274,32 +388,6 @@ def plot_land_zones_map(
     # fig.savefig(FIG_DIR / "land_zones.png", dpi=300)
     plt.show()
 
-    # fig = plt.figure(figsize=(15, 8))
-    # ax = plt.axes(projection=ccrs.PlateCarree())
-
-    # ax.imshow(
-    #     rgb_plot,
-    #     origin="lower",
-    #     extent=[lon.min(), lon.max(), lat.min(), lat.max()],
-    #     transform=ccrs.PlateCarree(),
-    # )
-
-    # ax.coastlines()
-    # ax.add_feature(cfeature.BORDERS, linewidth=0.4)
-    # ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=-1)
-    # ax.add_feature(cfeature.OCEAN, facecolor="lightblue", zorder=-1)
-
-    # ax.set_title("Koeppen renewable zones – Land", fontsize=14)
-    # ax.legend(
-    #     handles=patches,
-    #     loc="lower center",
-    #     bbox_to_anchor=(0.5, -0.25),
-    #     ncol=3,
-    #     frameon=False,
-    # )
-
-    # plt.subplots_adjust(bottom=0.25)
-    # plt.tight_layout()
     if out_path:
         fig.savefig(out_path, dpi=300)
     return fig, ax
