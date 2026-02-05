@@ -12,9 +12,9 @@ from config import ERA5_ZARR_URL
 Tile = Tuple[float, float, float, float]
 
 
-def calculate_maximum_deficit_dask(imbalance_da, time_dim="time"):
+def calculate_maximum_deficit(imbalance_da, time_dim="time"):
     """
-    Core math for Energy Deficit (Maximum Drawdown).
+    Core math for Energy Deficit.
 
     Logic:
     1. Integrates (cumsum) the net imbalance (Generation - Target).
@@ -66,8 +66,13 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
     clim = da.groupby("valid_time.dayofyear").mean("valid_time")
     clim_norm = (clim / clim.mean(dim="dayofyear")).compute()
 
+    bounds_str = f"({bounds[0]}, {bounds[1]}, {bounds[2]}, {bounds[3]})"
+    clim.to_netcdf(
+        f"climatology_{variable}_{bounds_str}_{start_year}_{end_year}.nc"
+    )  # Save for inspection/debugging
+
     seasonal_imb = (clim_norm - 1).rename({"dayofyear": "time"})
-    seasonal_var = calculate_maximum_deficit_dask(seasonal_imb, time_dim="time")
+    seasonal_var = calculate_maximum_deficit(seasonal_imb, time_dim="time")
 
     # --- 2. WEATHER (INTERANNUAL) VARIABILITY ---
     # Captures the deficit caused by year-to-year weather fluctuations
@@ -87,16 +92,22 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
     weather_imbalance = (year_norm - clim_expect).rename({"valid_time": "time"})
 
     # Calculate deficit for every year independently, then find the worst one (max)
-    weather_var = (
-        weather_imbalance.groupby("time.year")
-        .map(calculate_maximum_deficit_dask)
-        .max("year")
+    weather_var_per_year = weather_imbalance.groupby("time.year").map(
+        calculate_maximum_deficit
     )
+
+    # --- 3. RESOURCE DROUGHT (WORST-GENERATION YEAR) ---
+    # Drought defined as the max deficit of the year with lowest total generation
+    annual_generation = da.groupby("valid_time.year").sum("valid_time")
+    drought_year = annual_generation.argmin("year")
 
     return xr.Dataset(
         {
             "seasonal_variability": seasonal_var,
-            "weather_variability": weather_var,
+            "weather_variability_max": weather_var_per_year.max("year"),
+            "weather_variability_mean": weather_var_per_year.mean("year"),
+            "weather_variability_p95": weather_var_per_year.quantile(0.95, dim="year"),
+            "resource_drought": weather_var_per_year.sel(year=drought_year),
         }
     )
 
