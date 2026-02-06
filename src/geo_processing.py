@@ -31,7 +31,7 @@ def open_era5_zarr(url, retries=3, delay=3):
             time.sleep(delay)
 
 
-def load_era5_variable(url, var, bounds, start_year, end_year):
+def load_era5_variable(url, var, bounds, start_year, end_year, daily_sum=False):
     """
     Slices and prepares raw ERA5 variables.
     Handles coordinate wrapping (0-360 to -180-180) and descending latitude.
@@ -82,7 +82,10 @@ def load_era5_variable(url, var, bounds, start_year, end_year):
             "longitude"
         )
         # convert to daily means to reduce data volume
-        return da.resample(valid_time="1D").mean()
+        if daily_sum:
+            return da.resample(valid_time="1D").sum()
+        else:
+            return da.resample(valid_time="1D").mean()
     except Exception as e:
         print(f"Error selecting {var}: {e}")
         return None

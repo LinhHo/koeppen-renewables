@@ -285,7 +285,12 @@ def _pattern_matches(zone_label, pattern):
 
 
 def plot_land_zones_map(
-    ds, groups, out_path=None, figsize=(15, 9), legend_anchor=(0.5, -0.25)
+    ds,
+    groups,
+    out_path=None,
+    figsize=(15, 9),
+    legend_anchor=(0.5, -0.25),
+    legend_ncol=7,
 ):
     """
     Plot map from pre-classified per-pixel labels using group definitions.
@@ -319,7 +324,7 @@ def plot_land_zones_map(
     legend_items = []
     for group_code, (color, label, patterns) in groups.items():
         color_rgb = mcolors.to_rgb(color)
-        legend_items.append((color_rgb, f"{group_code} – {label}"))
+        legend_items.append((color_rgb, f"{group_code} {label}"))
 
         # Find all zone labels matching any pattern in this group
         for pattern in patterns:
@@ -373,7 +378,7 @@ def plot_land_zones_map(
         handles=patches,
         loc="lower center",
         bbox_to_anchor=legend_anchor,
-        ncol=3,
+        ncol=legend_ncol,
         frameon=False,
     )
     # Draw gridlines
@@ -597,4 +602,3 @@ def plot_stats_subgroups(percentage_df, groups_dict, title_suffix=""):
 
     plt.tight_layout()
     plt.show()
-

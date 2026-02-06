@@ -66,11 +66,6 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
     clim = da.groupby("valid_time.dayofyear").mean("valid_time")
     clim_norm = (clim / clim.mean(dim="dayofyear")).compute()
 
-    bounds_str = f"({bounds[0]}, {bounds[1]}, {bounds[2]}, {bounds[3]})"
-    clim.to_netcdf(
-        f"climatology_{variable}_{bounds_str}_{start_year}_{end_year}.nc"
-    )  # Save for inspection/debugging
-
     seasonal_imb = (clim_norm - 1).rename({"dayofyear": "time"})
     seasonal_var = calculate_maximum_deficit(seasonal_imb, time_dim="time")
 
@@ -98,11 +93,12 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
 
     # --- 3. RESOURCE DROUGHT (WORST-GENERATION YEAR) ---
     # Drought defined as the max deficit of the year with lowest total generation
-    annual_generation = da.groupby("valid_time.year").sum("valid_time")
+    annual_generation = da.groupby("valid_time.year").sum("valid_time").compute()
     drought_year = annual_generation.argmin("year")
 
     return xr.Dataset(
         {
+            "climatology": clim,
             "seasonal_variability": seasonal_var,
             "weather_variability_max": weather_var_per_year.max("year"),
             "weather_variability": weather_var_per_year.mean("year"),
