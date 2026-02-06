@@ -102,7 +102,7 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
 
     return xr.Dataset(
         {
-            "climatology": clim,
+            "climatology": clim.mean("dayofyear"),
             "seasonal_variability": seasonal_var,
             "weather_variability_max": weather_var_per_year.max("year"),
             "weather_variability": weather_var_per_year.mean("year"),
