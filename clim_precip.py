@@ -39,7 +39,7 @@ for tile in tiles:
 
     # clim = da.groupby("valid_time.dayofyear").mean("valid_time")
     # yearmean = da.groupby("valid_time.year").sum("valid_time").mean("year")
-    yearmean = da.resample(valid_time="1Y").sum().mean("valid_time")
+    yearmean = da.resample(valid_time="YE").sum().mean("valid_time")
     yearmean.to_netcdf(
         f"resources/automatic/tp/tmp_era5_precip_year_average_1995_2025_{tile_str}.nc",
         mode="w",

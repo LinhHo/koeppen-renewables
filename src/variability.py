@@ -87,13 +87,13 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
     weather_imbalance = (year_norm - clim_expect).rename({"valid_time": "time"})
 
     # Calculate deficit for every year independently, then find the worst one (max)
-    weather_var_per_year = weather_imbalance.groupby("time.year").map(
-        calculate_maximum_deficit
+    weather_var_per_year = (
+        weather_imbalance.groupby("time.year").map(calculate_maximum_deficit).compute()
     )
 
     # --- 3. RESOURCE DROUGHT (WORST-GENERATION YEAR) ---
     # Drought defined as the max deficit of the year with lowest total generation
-    annual_generation = da.groupby("valid_time.year").sum("valid_time").compute()
+    annual_generation = da.groupby("valid_time.year").sum("valid_time")
     drought_year = annual_generation.argmin("year")
 
     return xr.Dataset(
@@ -102,8 +102,8 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
             "seasonal_variability": seasonal_var,
             "weather_variability_max": weather_var_per_year.max("year"),
             "weather_variability": weather_var_per_year.mean("year"),
-            "weather_variability_p95": weather_var_per_year.quantile(0.95, dim="year"),
-            "resource_drought": weather_var_per_year.sel(year=drought_year),
+            # "weather_variability_p95": weather_var_per_year.quantile(0.95, dim="year"),
+            "resource_drought": weather_var_per_year.isel(year=drought_year),
         }
     )
 
