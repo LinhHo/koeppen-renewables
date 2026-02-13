@@ -7,6 +7,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import regionmask
+from matplotlib.colors import BoundaryNorm
 
 import seaborn as sns
 import xarray as xr
@@ -366,145 +367,6 @@ def _pattern_matches(zone_label, pattern):
             if pc != "x" and zc != pc:
                 return False
     return True
-
-
-def plot_land_zones_map(
-    ds,
-    groups,
-    out_path=None,
-    figsize=(15, 9),
-    extent=[-180, 180, -60, 80],
-    plot_legend=True,
-    legend_anchor=(0.5, -0.25),
-    legend_ncol=7,
-):
-    """
-    Plot map from pre-classified per-pixel labels using group definitions.
-
-    Parameters
-    ----------
-    ds : xarray.Dataset
-        Dataset with a "zones" variable containing 4-character zone labels.
-    groups : dict
-        Dictionary mapping group codes to [color, label, [patterns]].
-        Patterns can use 'x' as wildcard (e.g., "LxHR" matches any solar reliability).
-    out_path : str, optional
-        Path to save the figure.
-
-    Returns
-    -------
-    fig, ax : matplotlib figure and axes
-
-    """
-    if extent != [-180, 180, -60, 80]:
-        lon_min, lon_max, lat_min, lat_max = extent
-        zones = (
-            ds["zones"]
-            .sel(longitude=slice(lon_min, lon_max), latitude=slice(lat_max, lat_min))
-            .values
-        )
-        projection = ccrs.PlateCarree()
-    else:
-        zones = ds["zones"].values
-        projection = ccrs.Robinson()
-
-    # rgb = np.ones((zones.shape[0], zones.shape[1], 3), dtype=float)
-    rgb = np.full((zones.shape[0], zones.shape[1], 3), fill_value=np.nan, dtype=float)
-
-    # Collect all unique zone labels in the data (excluding empty strings)
-    unique_zones = set(zones.flatten())
-    unique_zones.discard("")
-    matched_zones = set()
-
-    # Build legend items and apply colors
-    legend_items = []
-    for group_code, (color, label, patterns) in groups.items():
-        color_rgb = mcolors.to_rgb(color)
-        legend_items.append((color_rgb, f"{group_code} {label}"))
-
-        # Find all zone labels matching any pattern in this group
-        for pattern in patterns:
-            for i in range(zones.shape[0]):
-                for j in range(zones.shape[1]):
-                    if _pattern_matches(zones[i, j], pattern):
-                        rgb[i, j] = color_rgb
-                        matched_zones.add(zones[i, j])
-
-    # Warn about unmatched zone labels
-    unmatched = unique_zones - matched_zones
-    if unmatched:
-        warnings.warn(
-            f"The following zone labels are in the data but not matched by any group pattern: {sorted(unmatched)}"
-        )
-
-    patches = [
-        mpatches.Patch(color=color, label=label) for color, label in legend_items
-    ]
-
-    # Preserve original orientation handling
-    # ds_sorted = ds.sortby("latitude")
-    rgb_plot = np.flipud(rgb)
-
-    # lat = ds_sorted["latitude"]
-    # lon = ds_sorted["longitude"]
-
-    # def plot_robinson(colours, patches, title_suffix=None):
-    fig = plt.figure(figsize=figsize)
-    ax = plt.axes(projection=projection)
-    ax.set_global()
-    ax.set_extent(
-        extent,  # lon_min, lon_max, lat_min, lat_max
-        crs=ccrs.PlateCarree(),
-    )
-    ax.imshow(
-        rgb_plot,
-        origin="lower",
-        extent=extent,
-        transform=ccrs.PlateCarree(),
-    )
-
-    ax.coastlines()
-    ax.add_feature(cfeature.BORDERS, linewidth=0.4)
-    # ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=-1)
-    # ax.add_feature(cfeature.OCEAN, facecolor="lightblue", zorder=-1)
-
-    # ax.set_title(f"Köppen renewable zones – {title_suffix}", fontsize=14)
-
-    if plot_legend:
-        ax.legend(
-            handles=patches,
-            loc="lower center",
-            bbox_to_anchor=legend_anchor,
-            ncol=legend_ncol,
-            frameon=False,
-        )
-    # Draw gridlines
-    gl = ax.gridlines(
-        draw_labels=True,
-        linewidth=0.5,
-        color="gray",
-        alpha=0.6,
-        linestyle="--",
-    )
-
-    # Choose which labels to show
-    gl.top_labels = False
-    gl.right_labels = False
-    gl.bottom_labels = True
-    gl.left_labels = True
-
-    # Set grid spacing
-    gl.xlocator = plt.FixedLocator(range(-180, 181, 30))  # longitude lines every 30°
-    gl.ylocator = plt.FixedLocator(range(-90, 91, 20))  # latitude lines every 15°
-
-    plt.subplots_adjust(bottom=0.25)
-    plt.tight_layout()
-    # fig.savefig(FIG_DIR / "land_zones.png", dpi=300)
-    plt.show()
-
-    if out_path:
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    return fig, ax
 
 
 def labeled_color_palette(
@@ -962,8 +824,6 @@ def plot_scatter_elevation_precipitation(ds_groupped, named_countries, out_path=
     )
 
     # toplot_big['country_name'].to_list()
-
-    from matplotlib.colors import BoundaryNorm
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
