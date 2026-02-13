@@ -8,19 +8,19 @@ import time
 import logging
 
 logger = logging.getLogger(__name__)
-from config import REFERENCE_RESOLUTION
+from config import REFERENCE_RESOLUTION, ERA5_ZARR_URL
 
 """
 Load ERA5 variables within bounding box and time range
 """
 
 
-def open_era5_zarr(url, retries=3, delay=3):
+def open_era5_zarr(retries=3, delay=3):
     for attempt in range(retries):
         try:
             # Chunk by spatial dimensions but keep time in single chunk for variability calculations
             return xr.open_dataset(
-                url,
+                ERA5_ZARR_URL,
                 chunks={},
                 engine="zarr",
             )
@@ -31,14 +31,14 @@ def open_era5_zarr(url, retries=3, delay=3):
             time.sleep(delay)
 
 
-def load_era5_variable(url, var, bounds, start_year, end_year, daily_sum=False):
+def load_era5_variable(var, bounds, start_year, end_year, daily_sum=False):
     """
     Slices and prepares raw ERA5 variables.
     Handles coordinate wrapping (0-360 to -180-180) and descending latitude.
     """
     min_lon, min_lat, max_lon, max_lat = bounds
 
-    ds = open_era5_zarr(url)
+    ds = open_era5_zarr()
 
     # Ensure latitude is North-to-South
     sel_lat_upper, sel_lat_lower = max(min_lat, max_lat), min(min_lat, max_lat)

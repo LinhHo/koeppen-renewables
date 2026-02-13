@@ -2,7 +2,7 @@
 authors = ["Linh Ho <45103089+LinhHo@users.noreply.github.com>"]
 channels = ["conda-forge"]
 name = "koeppen_renewables"
-platforms = ["linux-64"]
+platforms = ["linux-64", "osx-arm64"]
 version = "0.1.0"
 
 [tasks]
@@ -32,5 +32,8 @@ aiohttp = ">=3.13.3,<4"
 fsspec = ">=2025.12.0,<2026"
 matplotlib = ">=3.10.8,<4"
 cartopy = ">=0.25.0,<0.26"
+jupyterlab = ">=4.5.2,<5"
+seaborn = ">=0.13.2,<0.14"
 regionmask = ">=0.13.0,<0.14"
 
+product
