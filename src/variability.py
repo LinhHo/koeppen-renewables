@@ -7,6 +7,7 @@ from typing import Tuple
 
 from src.geo_processing import load_era5_variable
 from config import ERA5_ZARR_URL
+from pathlib import Path
 
 
 Tile = Tuple[float, float, float, float]
@@ -46,15 +47,17 @@ def calculate_maximum_deficit(imbalance_da, time_dim="time"):
     return deficit.isel({time_dim: slice(0, T)}).max(dim=time_dim) / T
 
 
-def compute_variability_daily(url, variable, bounds, start_year, end_year):
+def compute_seasonal_variability_daily(url, variable, bounds, start_year, end_year):
     """
     Main pipeline: Loads data, calculates Seasonal (climatological)
-    and Weather (interannual) variability.
+    return:
+        Seasonal variability (lon, lat)
+        Climatological mean (lon, lat)
     """
     # client = Client()
     da = load_era5_variable(url, variable, bounds, start_year, end_year)
     da = da.chunk(
-        {"valid_time": -1, "latitude": 10, "longitude": 10}
+        {"valid_time": -1, "latitude": 5, "longitude": 5}
     )  # Ensure time is in single chunk for deficit calculation
     # Remove Feb 29 for climatology calculations
     da = da.sel(
@@ -69,50 +72,59 @@ def compute_variability_daily(url, variable, bounds, start_year, end_year):
     seasonal_imb = (clim_norm - 1).rename({"dayofyear": "time"})
     seasonal_var = calculate_maximum_deficit(seasonal_imb, time_dim="time")
 
-    # --- 2. WEATHER (INTERANNUAL) VARIABILITY ---
-    # Captures the deficit caused by year-to-year weather fluctuations
-
-    # Vectorized normalization: divides each year by its own mean to isolate variance
-    yearly_means = da.groupby("valid_time.year").mean("valid_time")
-    year_norm = da / yearly_means
-
-    # Align the climatology reference with the actual hours of the full time series
-    # (Maps the 365-day cycle to the multi-decade period)
-    clim_expect = clim_norm.sel(dayofyear=da.valid_time.dt.dayofyear).drop_vars(
-        "dayofyear"
-    )
-    clim_expect.coords["valid_time"] = da.valid_time
-
-    # Weather Imbalance = (Actual Hourly Energy) - (Expected Seasonal Average)
-    weather_imbalance = (year_norm - clim_expect).rename({"valid_time": "time"})
-
-    # Calculate deficit for every year independently, then find the worst one (max)
-    weather_var_per_year = (
-        weather_imbalance.groupby("time.year").map(calculate_maximum_deficit).compute()
-    )
-
-    # # --- 3. RESOURCE DROUGHT (WORST-GENERATION YEAR) ---
-    # # Drought defined as the max deficit of the year with lowest total generation
-    # annual_generation = da.groupby("valid_time.year").sum("valid_time")
-
-    # drought_year = annual_generation.idxmin("year").compute()
-
-    # # Select deficit from that year
-    # resource_drought = weather_var_per_year.sel(year=drought_year, drop=True)
-
-    return xr.Dataset(
+    return (xr.Dataset(
         {
             "climatology": clim.mean("dayofyear"),
             "seasonal_variability": seasonal_var,
-            "weather_variability_max": weather_var_per_year.max("year"),
-            "weather_variability": weather_var_per_year.mean("year"),
-            # "weather_variability_p95": weather_var_per_year.quantile(0.95, dim="year"),
-            # "resource_drought": resource_drought,
-        }
+        },),
+        clim
     )
 
+# def compute_weather_variability_daily(url, variable, bounds, start_year, end_year):
+#     # --- 2. WEATHER (INTERANNUAL) VARIABILITY ---
+#     # Captures the deficit caused by year-to-year weather fluctuations
 
-def run_variability_for_tile(
+#     # Vectorized normalization: divides each year by its own mean to isolate variance
+#     yearly_means = da.groupby("valid_time.year").mean("valid_time")
+#     year_norm = da / yearly_means
+
+#     # Align the climatology reference with the actual hours of the full time series
+#     # (Maps the 365-day cycle to the multi-decade period)
+#     clim_expect = clim_norm.sel(dayofyear=da.valid_time.dt.dayofyear).drop_vars(
+#         "dayofyear"
+#     )
+#     clim_expect.coords["valid_time"] = da.valid_time
+
+#     # Weather Imbalance = (Actual Hourly Energy) - (Expected Seasonal Average)
+#     weather_imbalance = (year_norm - clim_expect).rename({"valid_time": "time"})
+
+#     # Calculate deficit for every year independently, then find the worst one (max)
+#     weather_var_per_year = (
+#         weather_imbalance.groupby("time.year").map(calculate_maximum_deficit).compute()
+#     )
+
+#     # # --- 3. RESOURCE DROUGHT (WORST-GENERATION YEAR) ---
+#     # # Drought defined as the max deficit of the year with lowest total generation
+#     # annual_generation = da.groupby("valid_time.year").sum("valid_time")
+
+#     # drought_year = annual_generation.idxmin("year").compute()
+
+#     # # Select deficit from that year
+#     # resource_drought = weather_var_per_year.sel(year=drought_year, drop=True)
+
+#     return xr.Dataset(
+#         {
+#             "climatology": clim.mean("dayofyear"),
+#             "seasonal_variability": seasonal_var,
+#             "weather_variability_max": weather_var_per_year.max("year"),
+#             "weather_variability": weather_var_per_year.mean("year"),
+#             # "weather_variability_p95": weather_var_per_year.quantile(0.95, dim="year"),
+#             # "resource_drought": resource_drought,
+#         }
+#     )
+
+
+def run_seasonal_variability_for_tile(
     tile: Tile,
     variable: str,
     start_year: int,
@@ -133,11 +145,11 @@ def run_variability_for_tile(
     minx, miny, maxx, maxy = tile
     bounds = (minx, miny, maxx, maxy)
 
-    ds = compute_variability_daily(
+    ds, clim = compute_seasonal_variability_daily(
         url=ERA5_ZARR_URL,
         variable=variable,
         bounds=bounds,
         start_year=start_year,
         end_year=end_year,
     )
-    return ds
+    return ds, clim

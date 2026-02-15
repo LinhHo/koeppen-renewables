@@ -53,7 +53,7 @@ ERA5_ZARR_URL = (
 
 PATHS = {
     "solar_atlas": "resources/user/PVOUT.tif",
-    "wind_atlas": "resources/user/cf_iec1_cog_100m.tif",
+    "wind_atlas": "resources/user/cf_iec2_cog_100m.tif",
     "ghsl": "resources/user/GHS_BUILT_S_E2020_GLOBE_R2023A_4326_30ss_V1_0_R8_C29.tif",
 }
 
@@ -65,5 +65,5 @@ ABUNDANCE_QUANTILES = {
 }
 
 VARIABILITY_QUANTILES = {
-    "low": 0.5,   # below median = reliable
+    "low": 0.5,  # below median = reliable
 }

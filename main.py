@@ -29,7 +29,10 @@ sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 from src.abundance_atlas import resample_atlas
 from src.geo_processing import generate_tiles
 from src.variability import run_variability_for_tile
-from src.demand import compute_demand_settlement_proximity #, run_demand_potential_for_tile
+from src.demand import (
+    compute_demand_settlement_proximity,
+)  # , run_demand_potential_for_tile
+
 # from src.OLD_plots import plot_all
 from config import (
     GLOBAL_DOMAIN,
@@ -94,11 +97,14 @@ def main():
                 # 1. Atlas
                 print("  -> Resampling Atlas...")
                 ds_main = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
+                climatology = xr.Dataset()
 
                 # 2. Variability (Wind & Solar)
                 for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
                     print(f"  -> Computing {label} variability...")
-                    ds_var = run_variability_for_tile(tile, var, start_year, end_year)
+                    ds_var, clim = run_variability_for_tile(
+                        tile, var, start_year, end_year
+                    )
                     # Merge into the main dataset for this tile
                     ds_main = xr.merge(
                         [
@@ -110,7 +116,10 @@ def main():
                         join="override",  # ignore slight coordinate mismatches
                         compat="override",
                     )
-                    
+                    climatology[var] = clim.rename(
+                        {var: f"{label}_{var}"}
+                    )  # (365 timesteps, longitude, latitude)
+
                 # 3. Demand Potential
                 ds_main["demand_settlement_proximity"] = (
                     compute_demand_settlement_proximity(tile, PATHS)
@@ -121,6 +130,10 @@ def main():
                 # Atomic Save (HPC Safe)
                 tmp_path = str(out_file) + ".tmp"
                 ds_main.to_netcdf(tmp_path, engine="netcdf4")
+                climatology.to_netcdf(
+                    output_dir / f"climatology_{tile_str}_{start_year}_{end_year}.nc",
+                    engine="netcdf4",
+                )
                 os.rename(tmp_path, out_file)
                 print(f"  [SUCCESS] Saved to {out_file.name}")
                 ds_main.close()
