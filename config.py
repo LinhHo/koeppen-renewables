@@ -57,13 +57,13 @@ PATHS = {
     "ghsl": "resources/user/GHS_BUILT_S_E2020_GLOBE_R2023A_4326_30ss_V1_0_R8_C29.tif",
 }
 
-# -----------------------
-# Koeppen renewable zones
-ABUNDANCE_QUANTILES = {
-    "low": 0.33,
-    "high": 0.66,
-}
+# # -----------------------
+# # Koeppen renewable zones
+# ABUNDANCE_QUANTILES = {
+#     "low": 0.33,
+#     "high": 0.66,
+# }
 
-VARIABILITY_QUANTILES = {
-    "low": 0.5,  # below median = reliable
-}
+# VARIABILITY_QUANTILES = {
+#     "low": 0.5,  # below median = reliable
+# }

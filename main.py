@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).parent
 sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 
 from src.abundance_atlas import resample_atlas
-from src.geo_processing import generate_tiles
+from src.geo_processing import generate_tiles, get_tile_cell_areas
 from src.variability import run_seasonal_variability_for_tile
 from src.demand import (
     compute_demand_settlement_proximity,
@@ -119,16 +119,15 @@ def main():
                     climatology[var] = clim  # (365 timesteps, longitude, latitude)
 
                 # 3. Demand Potential (m2 and fraction)
-                ds_demand = (
+                ds_main["demand_settlement_proximity_m2"] = (
                     compute_demand_settlement_proximity(tile, PATHS)
                     .sel(longitude=ds_main.longitude, latitude=ds_main.latitude)
-                    .rename("demand_settlement_proximity")
+                    .rename("demand_settlement_proximity_m2")
                 )
-                ds_main = xr.merge(
-                    [ds_main, ds_demand],
-                    join="override",  # ignore slight coordinate mismatches
-                    compat="override",
-                )
+                area_da = get_tile_cell_areas(tile)
+                ds_main["demand_proximity_fraction"] = (
+                    ds_main["demand_settlement_proximity_m2"] / area_da
+                ).clip(0, 1)
 
                 # Atomic Save (HPC Safe)
                 tmp_path = str(out_file) + ".tmp"

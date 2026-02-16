@@ -180,62 +180,60 @@ def compute_demand_settlement_proximity(
     return weighted_buffered
 
 
-# Temporarily put it here. Quantile normalisation seems to make clear jumps in demand potential on the map.
-quantile_normalised = False
+# # Temporarily put it here. Quantile normalisation seems to make clear jumps in demand potential on the map.
+# quantile_normalised = False
 
 
-def run_demand_potential_for_tile(
-    tile: Tile,
-    paths: dict,
-    start_year: int,
-    end_year: int,
-) -> xr.Dataset:
-    """
-    Compute both climate-driven and settlement-driven demand indicators for one tile.
+# def run_demand_potential_for_tile(
+#     tile: Tile,
+#     paths: dict,
+# ) -> xr.Dataset:
+#     """
+#     Compute both climate-driven and settlement-driven demand indicators for one tile.
 
-    Results are saved as NetCDF files in output_dir.
-    """
+#     Results are saved as NetCDF files in output_dir.
+#     """
 
-    minx, miny, maxx, maxy = tile
-    bounds = (minx, miny, maxx, maxy)
+#     minx, miny, maxx, maxy = tile
+#     bounds = (minx, miny, maxx, maxy)
 
-    ds = xr.Dataset()
+#     ds = xr.Dataset()
 
-    # Don't compute temperature-driven demand for now, as it doesn't add much spatial meaning and is more expensive to compute
-    # print("  -> Computing climate-driven demand indicator...")
-    # ds["demand_temperature_induced"] = compute_temperature_demand_indicator(
-    #     bounds, start_year, end_year
-    # )
+#     # Don't compute temperature-driven demand for now, as it doesn't add much spatial meaning and is more expensive to compute
+#     # print("  -> Computing climate-driven demand indicator...")
+#     # ds["demand_temperature_induced"] = compute_temperature_demand_indicator(
+#     #     bounds, start_year, end_year
+#     # )
 
-    print("  -> Computing settlement-driven demand potential...")
-    # Cut buffer zone
-    ds["demand_settlement_proximity"] = (
-        compute_demand_settlement_proximity(tile, paths)
-        .sel(longitude=ds.longitude, latitude=ds.latitude)
-        .rename("demand_settlement_proximity")
-    )
-    area_da = get_tile_cell_areas(tile)
-    ds["demand_proximity_fraction"] = (
-        ds["demand_settlement_proximity_m2"] / area_da
-    ).clip(0, 1)
+#     print("  -> Computing settlement-driven demand potential...")
+#     # Cut buffer zone
+#     ds["demand_settlement_proximity"] = (
+#         compute_demand_settlement_proximity(tile, paths)
+#         .sel(longitude=ds.longitude, latitude=ds.latitude)
+#         .rename("demand_settlement_proximity")
+#     )
+#     area_da = get_tile_cell_areas(tile)
+#     ds["demand_proximity_fraction"] = (
+#         ds["demand_settlement_proximity_m2"] / area_da
+#     ).clip(0, 1)
 
-    # # Compute demand potential as product of both indicators
-    # # Note: log1p used to compress large settlement values
-    # ##  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<
-    # # (1+temperature_indicator) to ensure non-zero even if no temperature-driven demand
-    # # temperature as an extra stressor for demand
-    # if quantile_normalised:
-    #     temperature_q95 = ds["demand_temperature_induced"].quantile(0.95)
-    #     demand_temperature_induced = xr.where(
-    #         temperature_q95 > 0, ds["demand_temperature_induced"] / temperature_q95, 0
-    #     ).clip(0, 1)
-    # else:
-    #     demand_temperature_induced = ds["demand_temperature_induced"] / np.max(
-    #         ds["demand_temperature_induced"]
-    #     )
+#     # # Compute demand potential as product of both indicators
+#     # # Note: log1p used to compress large settlement values
+#     # ##  NOTE LOG1P returns 0~10 not normalised values 0-1 <<<<<
+#     # # (1+temperature_indicator) to ensure non-zero even if no temperature-driven demand
+#     # # temperature as an extra stressor for demand
+#     # if quantile_normalised:
+#     #     temperature_q95 = ds["demand_temperature_induced"].quantile(0.95)
+#     #     demand_temperature_induced = xr.where(
+#     #         temperature_q95 > 0, ds["demand_temperature_induced"] / temperature_q95, 0
+#     #     ).clip(0, 1)
+#     # else:
+#     #     demand_temperature_induced = ds["demand_temperature_induced"] / np.max(
+#     #         ds["demand_temperature_induced"]
+#     #     )
 
-    # ds["demand_potential"] = (np.log1p(ds["demand_settlement_proximity"])) * (
-    #     1 + demand_temperature_induced
-    # )
+#     # ds["demand_potential"] = (np.log1p(ds["demand_settlement_proximity"])) * (
+#     #     1 + demand_temperature_induced
+#     # )
 
-    return ds
+#     return ds
