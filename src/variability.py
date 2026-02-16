@@ -61,7 +61,7 @@ def compute_seasonal_variability_daily(url, variable, bounds, start_year, end_ye
     # This 'cuts' the graph history and starts a fresh, tiny graph for the math
     da = da.persist()
     da = da.chunk(
-        {"valid_time": 365, "latitude": -1, "longitude": -1}
+        {"valid_time": -1, "latitude": 10, "longitude": 10}
     )  # Ensure time is in single chunk for deficit calculation
     # Remove Feb 29 for climatology calculations
     da = da.convert_calendar("noleap", dim="valid_time")
