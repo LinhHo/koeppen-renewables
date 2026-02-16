@@ -118,20 +118,29 @@ def main():
                     )
                     climatology[var] = clim  # (365 timesteps, longitude, latitude)
 
-                # 3. Demand Potential
-                ds_main["demand_settlement_proximity"] = (
+                # 3. Demand Potential (m2 and fraction)
+                ds_demand = (
                     compute_demand_settlement_proximity(tile, PATHS)
                     .sel(longitude=ds_main.longitude, latitude=ds_main.latitude)
                     .rename("demand_settlement_proximity")
+                )
+                ds_main = xr.merge(
+                    [ds_main, ds_demand],
+                    join="override",  # ignore slight coordinate mismatches
+                    compat="override",
                 )
 
                 # Atomic Save (HPC Safe)
                 tmp_path = str(out_file) + ".tmp"
                 ds_main.to_netcdf(tmp_path, engine="netcdf4")
-                climatology.to_netcdf(
-                    output_dir / f"climatology_{tile_str}_{start_year}_{end_year}.nc",
-                    engine="netcdf4",
+
+                # Save climatology to the "climatology" directory
+                clim_file = (
+                    output_dir
+                    / f"climatology/climatology_{tile_str}_{start_year}_{end_year}.nc"
                 )
+                if not clim_file.exists():
+                    climatology.to_netcdf(clim_file, engine="netcdf4")
                 os.rename(tmp_path, out_file)
                 print(f"  [SUCCESS] Saved to {out_file.name}")
                 ds_main.close()

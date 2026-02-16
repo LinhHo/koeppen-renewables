@@ -26,6 +26,7 @@ from src.geo_processing import (
     load_era5_variable,
     clip_and_resample,
     create_tile_template,
+    get_tile_cell_areas,
 )
 
 from config import (
@@ -213,6 +214,10 @@ def run_demand_potential_for_tile(
         .sel(longitude=ds.longitude, latitude=ds.latitude)
         .rename("demand_settlement_proximity")
     )
+    area_da = get_tile_cell_areas(tile)
+    ds["demand_proximity_fraction"] = (
+        ds["demand_settlement_proximity_m2"] / area_da
+    ).clip(0, 1)
 
     # # Compute demand potential as product of both indicators
     # # Note: log1p used to compress large settlement values

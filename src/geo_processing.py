@@ -184,3 +184,35 @@ def create_tile_template(bounds, resolution, crs="EPSG:4326"):
     )
     # rioxarray expects x/y for spatial operations, we'll map them during resampling
     return template.rio.write_crs(crs)
+
+
+def get_tile_cell_areas(tile, res=0.25):
+    """
+    Returns an xarray.DataArray containing the area in m2 
+    for each grid cell within the specified tile.
+    """
+    minx, miny, maxx, maxy = tile
+    
+    # Create the coordinate centers (aligning with ERA5 0.25 deg grid)
+    # Note: ERA5 typically uses center-points like 19.875, 19.625...
+    lats = np.arange(maxy - res/2, miny, -res)
+    lons = np.arange(minx + res/2, maxx, res)
+    
+    R = 6371000.0  # Earth's radius in meters
+    d_lat = np.radians(res)
+    d_lon = np.radians(res)
+    
+    # Calculate area for each latitude
+    # Area = R^2 * cos(lat) * d_lat * d_lon
+    # Use np.cos(np.radians(lats)) to get a 1D array of multipliers
+    areas_1d = (R**2) * np.cos(np.radians(lats)) * d_lat * d_lon
+    
+    # Broadcast to 2D (lat, lon)
+    area_2d = np.tile(areas_1d[:, np.newaxis], (1, len(lons)))
+    
+    return xr.DataArray(
+        data=area_2d,
+        coords={"latitude": lats, "longitude": lons},
+        dims=("latitude", "longitude"),
+        name="cell_area_m2"
+    )
