@@ -28,7 +28,7 @@ sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 
 from src.abundance_atlas import resample_atlas
 from src.geo_processing import generate_tiles
-from src.variability import run_variability_for_tile
+from src.variability import run_seasonal_variability_for_tile
 from src.demand import (
     compute_demand_settlement_proximity,
 )  # , run_demand_potential_for_tile
@@ -102,7 +102,7 @@ def main():
                 # 2. Variability (Wind & Solar)
                 for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
                     print(f"  -> Computing {label} variability...")
-                    ds_var, clim = run_variability_for_tile(
+                    ds_var, clim = run_seasonal_variability_for_tile(
                         tile, var, start_year, end_year
                     )
                     # Merge into the main dataset for this tile
