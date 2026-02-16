@@ -116,9 +116,11 @@ def main():
                         join="override",  # ignore slight coordinate mismatches
                         compat="override",
                     )
+                    print("===== clim ", clim)
                     climatology[var] = clim.rename(
                         {var: f"{label}_{var}"}
                     )  # (365 timesteps, longitude, latitude)
+                print("=========== climatology", climatology)
 
                 # 3. Demand Potential
                 ds_main["demand_settlement_proximity"] = (

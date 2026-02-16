@@ -66,19 +66,22 @@ def compute_seasonal_variability_daily(url, variable, bounds, start_year, end_ye
 
     # --- 1. SEASONAL VARIABILITY ---
     # Captures the deficit caused by the regular annual/diurnal cycle
-    clim = da.groupby("valid_time.dayofyear").mean("valid_time")
+    clim = da.groupby("valid_time.dayofyear").mean("valid_time").compute()
     clim_norm = (clim / clim.mean(dim="dayofyear")).compute()
 
     seasonal_imb = (clim_norm - 1).rename({"dayofyear": "time"})
     seasonal_var = calculate_maximum_deficit(seasonal_imb, time_dim="time")
 
-    return (xr.Dataset(
-        {
-            "climatology": clim.mean("dayofyear"),
-            "seasonal_variability": seasonal_var,
-        },),
-        clim
+    return (
+        xr.Dataset(
+            {
+                "climatology": clim.mean("dayofyear"),
+                "seasonal_variability": seasonal_var,
+            },
+        ),
+        clim,
     )
+
 
 # def compute_weather_variability_daily(url, variable, bounds, start_year, end_year):
 #     # --- 2. WEATHER (INTERANNUAL) VARIABILITY ---
