@@ -7,7 +7,8 @@ from typing import Tuple
 
 from src.geo_processing import load_era5_variable
 from config import ERA5_ZARR_URL
-from pathlib import Path
+
+# from pathlib import Path
 
 
 Tile = Tuple[float, float, float, float]
@@ -56,13 +57,14 @@ def compute_seasonal_variability_daily(url, variable, bounds, start_year, end_ye
     """
     # client = Client()
     da = load_era5_variable(url, variable, bounds, start_year, end_year)
+    # TTrigger the load for JUST THIS TILE into worker memory
+    # This 'cuts' the graph history and starts a fresh, tiny graph for the math
+    da = da.persist()
     da = da.chunk(
-        {"valid_time": -1, "latitude": 5, "longitude": 5}
+        {"valid_time": 365, "latitude": -1, "longitude": -1}
     )  # Ensure time is in single chunk for deficit calculation
     # Remove Feb 29 for climatology calculations
-    da = da.sel(
-        valid_time=~((da.valid_time.dt.month == 2) & (da.valid_time.dt.day == 29))
-    )
+    da = da.convert_calendar("noleap", dim="valid_time")
 
     # --- 1. SEASONAL VARIABILITY ---
     # Captures the deficit caused by the regular annual/diurnal cycle
