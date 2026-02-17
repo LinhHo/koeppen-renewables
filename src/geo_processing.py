@@ -186,33 +186,87 @@ def create_tile_template(bounds, resolution, crs="EPSG:4326"):
     return template.rio.write_crs(crs)
 
 
-def get_tile_cell_areas(tile, res=0.25):
+import math
+import numpy as np
+import xarray as xr
+
+
+def _area_of_pixel(pixel_size, center_lat):
+    """Calculate m^2 area of a wgs84 square pixel (WGS84 Ellipsoid)."""
+    a = 6378137  # meters (semi-major axis)
+    b = 6356752.3142  # meters (semi-minor axis)
+    e = math.sqrt(1 - (b / a) ** 2)
+    area_list = []
+
+    # Calculate the area from the equator to the latitude of the pixel edges
+    for f in [center_lat + pixel_size / 2, center_lat - pixel_size / 2]:
+        lat_rad = math.radians(f)
+        zm = 1 - e * math.sin(lat_rad)
+        zp = 1 + e * math.sin(lat_rad)
+        # Formula for the area of a spherical cap on an ellipsoid
+        area_list.append(
+            math.pi
+            * b**2
+            * (math.log(zp / zm) / (2 * e) + math.sin(lat_rad) / (zp * zm))
+        )
+
+    # Area of the zone = (fraction of the circle) * (difference in surface area)
+    # Result is in m^2 (removed the /1e6 from your original to keep it in m2)
+    return abs(pixel_size / 360.0 * (area_list[0] - area_list[1]))
+
+
+def determine_pixel_areas(raster_input):
     """
-    Returns an xarray.DataArray containing the area in m2 
-    for each grid cell within the specified tile.
+    Returns a DataArray of pixel areas in [m2] that matches the latitude
+    of raster_input for easy division.
     """
-    minx, miny, maxx, maxy = tile
-    
-    # Create the coordinate centers (aligning with ERA5 0.25 deg grid)
-    # Note: ERA5 typically uses center-points like 19.875, 19.625...
-    lats = np.arange(maxy - res/2, miny, -res)
-    lons = np.arange(minx + res/2, maxx, res)
-    
-    R = 6371000.0  # Earth's radius in meters
-    d_lat = np.radians(res)
-    d_lon = np.radians(res)
-    
-    # Calculate area for each latitude
-    # Area = R^2 * cos(lat) * d_lat * d_lon
-    # Use np.cos(np.radians(lats)) to get a 1D array of multipliers
-    areas_1d = (R**2) * np.cos(np.radians(lats)) * d_lat * d_lon
-    
-    # Broadcast to 2D (lat, lon)
-    area_2d = np.tile(areas_1d[:, np.newaxis], (1, len(lons)))
-    
-    return xr.DataArray(
-        data=area_2d,
-        coords={"latitude": lats, "longitude": lons},
-        dims=("latitude", "longitude"),
-        name="cell_area_m2"
+    # 1. Verify CRS
+    assert raster_input.rio.crs.to_epsg() == 4326, "CRS must be EPSG:4326"
+
+    # 2. Get resolution (assumes square pixels in degrees)
+    # Using abs() because resolution is often negative in the y-axis (lat)
+    resolution = abs(raster_input.rio.resolution()[0])
+
+    # 3. Vectorize calculation over latitudes only
+    varea_of_pixel = np.vectorize(lambda lat: _area_of_pixel(resolution, lat))
+    pixel_area_1d = varea_of_pixel(raster_input.latitude.values)
+
+    # 4. Create DataArray aligned with the latitude dimension
+    # This allows: raster_input / pixel_area_da to work instantly
+    pixel_area_da = xr.DataArray(
+        pixel_area_1d, coords={"latitude": raster_input.latitude}, dims="latitude"
     )
+
+    return pixel_area_da
+
+
+# def get_tile_cell_areas(tile, res=0.25):
+#     """
+#     Returns an xarray.DataArray containing the area in m2
+#     for each grid cell within the specified tile.
+#     """
+#     minx, miny, maxx, maxy = tile
+
+#     # Create the coordinate centers (aligning with ERA5 0.25 deg grid)
+#     # Note: ERA5 typically uses center-points like 19.875, 19.625...
+#     lats = np.arange(maxy - res/2, miny, -res)
+#     lons = np.arange(minx + res/2, maxx, res)
+
+#     R = 6371000.0  # Earth's radius in meters
+#     d_lat = np.radians(res)
+#     d_lon = np.radians(res)
+
+#     # Calculate area for each latitude
+#     # Area = R^2 * cos(lat) * d_lat * d_lon
+#     # Use np.cos(np.radians(lats)) to get a 1D array of multipliers
+#     areas_1d = (R**2) * np.cos(np.radians(lats)) * d_lat * d_lon
+
+#     # Broadcast to 2D (lat, lon)
+#     area_2d = np.tile(areas_1d[:, np.newaxis], (1, len(lons)))
+
+#     return xr.DataArray(
+#         data=area_2d,
+#         coords={"latitude": lats, "longitude": lons},
+#         dims=("latitude", "longitude"),
+#         name="cell_area_m2"
+#     )

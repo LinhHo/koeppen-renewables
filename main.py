@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).parent
 sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 
 from src.abundance_atlas import resample_atlas
-from src.geo_processing import generate_tiles, get_tile_cell_areas
+from src.geo_processing import generate_tiles, determine_pixel_areas
 from src.variability import run_seasonal_variability_for_tile
 from src.demand import (
     compute_demand_settlement_proximity,
@@ -124,9 +124,9 @@ def main():
                     .sel(longitude=ds_main.longitude, latitude=ds_main.latitude)
                     .rename("demand_settlement_proximity_m2")
                 )
-                area_da = get_tile_cell_areas(tile)
+                pixel_area = determine_pixel_areas(ds_main["demand_settlement_proximity_m2"].rio.write_crs("EPSG:4326"))
                 ds_main["demand_proximity_fraction"] = (
-                    ds_main["demand_settlement_proximity_m2"] / area_da
+                    ds_main["demand_settlement_proximity_m2"] / pixel_area
                 ).clip(0, 1)
 
                 # Atomic Save (HPC Safe)
