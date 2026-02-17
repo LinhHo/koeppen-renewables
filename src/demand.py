@@ -26,7 +26,6 @@ from src.geo_processing import (
     load_era5_variable,
     clip_and_resample,
     create_tile_template,
-    get_tile_cell_areas,
 )
 
 from config import (
