@@ -98,7 +98,7 @@ def get_complementarity_index(tile: Tile, start_year, end_year):
     # Load data
     ds_wind = load_era5_variable(
         ERA5_ZARR_URL, "ws100", bounds, start_year, end_year, daily_sum=False
-    ).persist()
+    )
     ds_wind = ds_wind.chunk(
         {"valid_time": -1, "latitude": -1, "longitude": -1}
     )  # Ensure time is in single chunk for deficit calculation
@@ -107,7 +107,7 @@ def get_complementarity_index(tile: Tile, start_year, end_year):
 
     ds_solar = load_era5_variable(
         ERA5_ZARR_URL, "ssrd", bounds, start_year, end_year, daily_sum=True
-    ).persist()
+    )
     ds_solar = ds_solar.chunk(
         {"valid_time": -1, "latitude": -1, "longitude": -1}
     )  # Ensure time is in single chunk for deficit calculation

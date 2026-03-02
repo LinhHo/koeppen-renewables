@@ -66,7 +66,7 @@ def parse_args():
 
 
 def main():
-    client = Client(n_workers=4, threads_per_worker=2, memory_limit="16GB")
+    client = Client(n_workers=4, threads_per_worker=1, memory_limit="24GB")
     args = parse_args()
     domain = (
         dict(zip(["minx", "miny", "maxx", "maxy"], args.bounds))
@@ -104,6 +104,7 @@ def main():
             result.to_netcdf(complementarity_file, engine="netcdf4")
         else:
             print(f"\n--- Tile already exists, skipping: {tile_str} ---")
+            client.close()
 
         # out_file = output_dir / f"processed_{tile_str}_{start_year}_{end_year}.nc"
 
@@ -169,7 +170,7 @@ def main():
         #     print(f"Processed tile for {tile_str} exists. Skipping.")
 
         gc.collect()
-    client.close()
+    # client.close()
     # plot_all()
 
 
