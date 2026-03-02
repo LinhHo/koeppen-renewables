@@ -66,7 +66,7 @@ def parse_args():
 
 
 def main():
-    client = Client()  # n_workers=2, threads_per_worker=2, memory_limit="12GB")
+    client = Client(n_workers=4, threads_per_worker=2, memory_limit="16GB")
     args = parse_args()
     domain = (
         dict(zip(["minx", "miny", "maxx", "maxy"], args.bounds))
@@ -95,11 +95,15 @@ def main():
             output_dir
             / f"complementarity/complementarity_{tile_str}_{start_year}_{end_year}.nc"
         )
-        corr_index = get_complementarity_index(tile, start_year, end_year)
-        with ProgressBar():
-            # This is where the actual heavy lifting happens
-            result = corr_index.compute()
-        result.to_netcdf(complementarity_file, engine="netcdf4")
+        if not complementarity_file.exists():
+            print(f"\n--- Computing Complementarity for Tile: {tile_str} ---")
+            corr_index = get_complementarity_index(tile, start_year, end_year)
+            with ProgressBar():
+                # This is where the actual heavy lifting happens
+                result = corr_index.compute()
+            result.to_netcdf(complementarity_file, engine="netcdf4")
+        else:
+            print(f"\n--- Tile already exists, skipping: {tile_str} ---")
 
         # out_file = output_dir / f"processed_{tile_str}_{start_year}_{end_year}.nc"
 

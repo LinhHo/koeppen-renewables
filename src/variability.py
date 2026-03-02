@@ -100,7 +100,7 @@ def get_complementarity_index(tile: Tile, start_year, end_year):
         ERA5_ZARR_URL, "ws100", bounds, start_year, end_year, daily_sum=False
     ).persist()
     ds_wind = ds_wind.chunk(
-        {"valid_time": -1}  # , "latitude": -1, "longitude": -1}
+        {"valid_time": -1, "latitude": -1, "longitude": -1}
     )  # Ensure time is in single chunk for deficit calculation
     # Remove Feb 29 for climatology calculations
     ds_wind = ds_wind.convert_calendar("noleap", dim="valid_time")
@@ -109,7 +109,7 @@ def get_complementarity_index(tile: Tile, start_year, end_year):
         ERA5_ZARR_URL, "ssrd", bounds, start_year, end_year, daily_sum=True
     ).persist()
     ds_solar = ds_solar.chunk(
-        {"valid_time": -1}  # , "latitude": -1, "longitude": -1}
+        {"valid_time": -1, "latitude": -1, "longitude": -1}
     )  # Ensure time is in single chunk for deficit calculation
     # Remove Feb 29 for climatology calculations
     ds_solar = ds_solar.convert_calendar("noleap", dim="valid_time")
