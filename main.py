@@ -21,6 +21,7 @@ import argparse
 import xarray as xr
 import numpy as np
 from dask.distributed import Client
+from dask.diagnostics import ProgressBar
 import gc
 
 REPO_ROOT = Path(__file__).parent
@@ -28,7 +29,7 @@ sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 
 from src.abundance_atlas import resample_atlas
 from src.geo_processing import generate_tiles, determine_pixel_areas
-from src.variability import run_seasonal_variability_for_tile
+from src.variability import run_seasonal_variability_for_tile, get_complementarity_index
 from src.demand import (
     compute_demand_settlement_proximity,
 )  # , run_demand_potential_for_tile
@@ -89,99 +90,82 @@ def main():
         client.restart()
         # Simplified naming: minx_miny_maxx_maxy
         tile_str = "_".join(map(str, tile))
-        out_file = output_dir / f"processed_{tile_str}_{start_year}_{end_year}.nc"
 
-        if not out_file.exists():
-            print(f"\n--- Processing Tile: {tile_str} ---")
-            try:
-                # 1. Atlas
-                print("  -> Resampling Atlas...")
-                ds_main = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
-                climatology = xr.Dataset()
+        complementarity_file = (
+            output_dir
+            / f"complementarity/complementarity_{tile_str}_{start_year}_{end_year}.nc"
+        )
+        corr_index = get_complementarity_index(tile, start_year, end_year)
+        with ProgressBar():
+            # This is where the actual heavy lifting happens
+            result = corr_index.compute()
+        result.to_netcdf(complementarity_file, engine="netcdf4")
 
-                # 2. Variability (Wind & Solar)
-                for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
-                    print(f"  -> Computing {label} variability...")
-                    ds_var, clim = run_seasonal_variability_for_tile(
-                        tile, var, start_year, end_year
-                    )
-                    # Merge into the main dataset for this tile
-                    ds_main = xr.merge(
-                        [
-                            ds_main,
-                            ds_var.rename(
-                                {v: f"{label}_{v}" for v in ds_var.data_vars}
-                            ),
-                        ],
-                        join="override",  # ignore slight coordinate mismatches
-                        compat="override",
-                    )
-                    climatology[var] = clim  # (365 timesteps, longitude, latitude)
+        # out_file = output_dir / f"processed_{tile_str}_{start_year}_{end_year}.nc"
 
-                # 3. Demand Potential (m2 and fraction)
-                ds_main["demand_settlement_proximity_m2"] = (
-                    compute_demand_settlement_proximity(tile, PATHS)
-                    .sel(longitude=ds_main.longitude, latitude=ds_main.latitude)
-                    .rename("demand_settlement_proximity_m2")
-                )
-                pixel_area = determine_pixel_areas(ds_main["demand_settlement_proximity_m2"].rio.write_crs("EPSG:4326"))
-                ds_main["demand_proximity_fraction"] = (
-                    ds_main["demand_settlement_proximity_m2"] / pixel_area
-                ).clip(0, 1)
-
-                # Atomic Save (HPC Safe)
-                tmp_path = str(out_file) + ".tmp"
-                ds_main.to_netcdf(tmp_path, engine="netcdf4")
-
-                # Save climatology to the "climatology" directory
-                clim_file = (
-                    output_dir
-                    / f"climatology/climatology_{tile_str}_{start_year}_{end_year}.nc"
-                )
-                if not clim_file.exists():
-                    climatology.to_netcdf(clim_file, engine="netcdf4")
-                os.rename(tmp_path, out_file)
-                print(f"  [SUCCESS] Saved to {out_file.name}")
-                ds_main.close()
-                del ds_main
-
-            except Exception as e:
-                print(f"  [ERROR] Tile {tile_str} failed: {e}")
-                if "tmp_path" in locals() and os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-        else:
-            print(f"Processed tile for {tile_str} exists. Skipping.")
-
-        # # 3. Demand Potential
-        # # incl. demand_potential, demand_temperature_induced, demand_settlement_proximity
-        # demand_out = (
-        #     output_dir / f"demand_potential_{tile_str}_{start_year}_{end_year}.nc"
-        # )
-
-        # if not demand_out.exists():
+        # if not out_file.exists():
         #     print(f"\n--- Processing Tile: {tile_str} ---")
         #     try:
-        #         print("  -> Computing demand potential...")
-        #         ds_demand = run_demand_potential_for_tile(
-        #             tile, PATHS, start_year, end_year
-        #         )
+        #         # 1. Atlas
+        #         print("  -> Resampling Atlas...")
+        #         ds_main = resample_atlas(tile, PATHS, resolution=REFERENCE_RESOLUTION)
+        #         climatology = xr.Dataset()
 
-        #         print("  -> Saving demand potential...")
+        #         # 2. Variability (Wind & Solar)
+        #         for label, var in {"solar": "ssrd", "wind": "ws100"}.items():
+        #             print(f"  -> Computing {label} variability...")
+        #             ds_var, clim = run_seasonal_variability_for_tile(
+        #                 tile, var, start_year, end_year
+        #             )
+        #             # Merge into the main dataset for this tile
+        #             ds_main = xr.merge(
+        #                 [
+        #                     ds_main,
+        #                     ds_var.rename(
+        #                         {v: f"{label}_{v}" for v in ds_var.data_vars}
+        #                     ),
+        #                 ],
+        #                 join="override",  # ignore slight coordinate mismatches
+        #                 compat="override",
+        #             )
+        #             climatology[var] = clim  # (365 timesteps, longitude, latitude)
+
+        #         # 3. Demand Potential (m2 and fraction)
+        #         ds_main["demand_settlement_proximity_m2"] = (
+        #             compute_demand_settlement_proximity(tile, PATHS)
+        #             .sel(longitude=ds_main.longitude, latitude=ds_main.latitude)
+        #             .rename("demand_settlement_proximity_m2")
+        #         )
+        #         pixel_area = determine_pixel_areas(ds_main["demand_settlement_proximity_m2"].rio.write_crs("EPSG:4326"))
+        #         ds_main["demand_proximity_fraction"] = (
+        #             ds_main["demand_settlement_proximity_m2"] / pixel_area
+        #         ).clip(0, 1)
+
         #         # Atomic Save (HPC Safe)
-        #         tmp_path = str(demand_out) + ".tmp"
-        #         ds_demand.to_netcdf(tmp_path, engine="netcdf4")
-        #         os.rename(tmp_path, demand_out)
-        #         print(f"  [SUCCESS] Saved to {demand_out.name}")
-        #         ds_demand.close()
-        #         del ds_demand
+        #         tmp_path = str(out_file) + ".tmp"
+        #         ds_main.to_netcdf(tmp_path, engine="netcdf4")
+
+        #         # Save climatology to the "climatology" directory
+        #         clim_file = (
+        #             output_dir
+        #             / f"climatology/climatology_{tile_str}_{start_year}_{end_year}.nc"
+        #         )
+        #         if not clim_file.exists():
+        #             climatology.to_netcdf(clim_file, engine="netcdf4")
+        #         os.rename(tmp_path, out_file)
+        #         print(f"  [SUCCESS] Saved to {out_file.name}")
+        #         ds_main.close()
+        #         del ds_main
+
         #     except Exception as e:
         #         print(f"  [ERROR] Tile {tile_str} failed: {e}")
         #         if "tmp_path" in locals() and os.path.exists(tmp_path):
         #             os.remove(tmp_path)
         # else:
-        #     print(f"Demand potential tile for {tile_str} exists. Skipping.")
+        #     print(f"Processed tile for {tile_str} exists. Skipping.")
+
         gc.collect()
-    # client.close()
+    client.close()
     # plot_all()
 
 

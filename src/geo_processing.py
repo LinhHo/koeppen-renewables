@@ -31,14 +31,8 @@ def open_era5_zarr(url, retries=3, delay=3):
             time.sleep(delay)
 
 
-def load_era5_variable(url, var, bounds, start_year, end_year, daily_sum=False):
-    """
-    Slices and prepares raw ERA5 variables.
-    Handles coordinate wrapping (0-360 to -180-180) and descending latitude.
-    """
+def convert_coordinate_ERA5(bounds):
     min_lon, min_lat, max_lon, max_lat = bounds
-
-    ds = open_era5_zarr(url)
 
     # Ensure latitude is North-to-South
     sel_lat_upper, sel_lat_lower = max(min_lat, max_lat), min(min_lat, max_lat)
@@ -57,6 +51,17 @@ def load_era5_variable(url, var, bounds, start_year, end_year, daily_sum=False):
     else:
         sel_lons = np.arange(sel_min_lon, sel_max_lon, REFERENCE_RESOLUTION)
     selector = {"latitude": sel_lats, "longitude": sel_lons, "method": "nearest"}
+    return selector
+
+
+def load_era5_variable(url, var, bounds, start_year, end_year, daily_sum=False):
+    """
+    Slices and prepares raw ERA5 variables.
+    Handles coordinate wrapping (0-360 to -180-180) and descending latitude.
+    """
+
+    ds = open_era5_zarr(url)
+    selector = convert_coordinate_ERA5(bounds)
 
     # Temporal selection
     ds = ds.sel(valid_time=slice(f"{start_year}-01-01", f"{end_year}-12-31"))
@@ -82,7 +87,7 @@ def load_era5_variable(url, var, bounds, start_year, end_year, daily_sum=False):
             "longitude"
         )
         # convert to daily means to reduce data volume
-        if daily_sum:
+        if daily_sum or var in ["ssrd", "tp"]:
             return da.resample(valid_time="1D").sum()
         else:
             return da.resample(valid_time="1D").mean()

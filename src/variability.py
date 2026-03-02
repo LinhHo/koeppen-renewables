@@ -5,7 +5,7 @@ from typing import Tuple
 
 # from dask.distributed import Client
 
-from src.geo_processing import load_era5_variable
+from src.geo_processing import load_era5_variable, convert_coordinate_ERA5
 from config import ERA5_ZARR_URL
 
 # from pathlib import Path
@@ -83,6 +83,40 @@ def compute_seasonal_variability_daily(url, variable, bounds, start_year, end_ye
         ),
         clim,
     )
+
+
+def get_complementarity_index(tile: Tile, start_year, end_year):
+    """
+    Calculates the Pearson correlation between wind speed and solar radiation
+    optimised for memory efficiency over long time series.
+    Daily Resampling: For seasonal complementarity, we mean-aggregate to daily.
+    Note: Solar 'ssrd' is accumulated, so we take the sum
+    """
+    minx, miny, maxx, maxy = tile
+    bounds = (minx, miny, maxx, maxy)
+
+    # Load data
+    ds_wind = load_era5_variable(
+        ERA5_ZARR_URL, "ws100", bounds, start_year, end_year, daily_sum=False
+    ).persist()
+    ds_wind = ds_wind.chunk(
+        {"valid_time": -1}  # , "latitude": -1, "longitude": -1}
+    )  # Ensure time is in single chunk for deficit calculation
+    # Remove Feb 29 for climatology calculations
+    ds_wind = ds_wind.convert_calendar("noleap", dim="valid_time")
+
+    ds_solar = load_era5_variable(
+        ERA5_ZARR_URL, "ssrd", bounds, start_year, end_year, daily_sum=True
+    ).persist()
+    ds_solar = ds_solar.chunk(
+        {"valid_time": -1}  # , "latitude": -1, "longitude": -1}
+    )  # Ensure time is in single chunk for deficit calculation
+    # Remove Feb 29 for climatology calculations
+    ds_solar = ds_solar.convert_calendar("noleap", dim="valid_time")
+
+    correlation = xr.corr(ds_wind, ds_solar, dim="valid_time")
+
+    return correlation
 
 
 # def compute_weather_variability_daily(url, variable, bounds, start_year, end_year):
