@@ -97,32 +97,41 @@ def main():
         # Simplified naming: minx_miny_maxx_maxy
         tile_str = "_".join(map(str, tile))
 
-    # ── Complementarity (unchanged logic, now guarded) ──────────
-    if args.with_complementarity:
-        comp_file = (
-            output_dir
-            / f"complementarity/complementarity_{tile_str}_{start_year}_{end_year}.nc"
-        )
-        if not comp_file.exists():
-            corr_index = get_complementarity_index(tile, start_year, end_year)
-            with ProgressBar():
-                result = corr_index.compute()
-            result.to_netcdf(comp_file, engine="netcdf4")
+        # ── Complementarity (unchanged logic, now guarded) ──────────
+        if args.with_complementarity:
+            comp_file = (
+                output_dir
+                / f"complementarity/complementarity_{tile_str}_{start_year}_{end_year}.nc"
+            )
+            if not comp_file.exists():
+                corr_index = get_complementarity_index(tile, start_year, end_year)
+                with ProgressBar():
+                    result = corr_index.compute()
+                result.to_netcdf(comp_file, engine="netcdf4")
 
-    # ── Long-duration storage ────────────────────────────────────
-    if args.with_lds:
-        lds_file = output_dir / f"storage/lds_{tile_str}_{start_year}_{end_year}.nc"
-        if not lds_file.exists():
-            tmp_path = str(lds_file) + ".tmp"
-            try:
-                ds_lds = compute_lds_for_tile(tile, start_year, end_year, ALPHA_VALUES)
-                ds_lds.to_netcdf(tmp_path, engine="netcdf4")
-                os.rename(tmp_path, lds_file)  # atomic on POSIX/HPC
-                del ds_lds
-            except Exception as e:
-                print(f"  [ERROR] Long-duration storage {tile_str}: {e}")
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+        # ── Long-duration storage ────────────────────────────────────
+        if args.with_lds:
+            lds_file = output_dir / f"storage/lds_{tile_str}_{start_year}_{end_year}.nc"
+            if not lds_file.exists():
+                tmp_path = str(lds_file) + ".tmp"
+                try:
+                    print(
+                        f"\n--- Computing long-duration storage for Tile: {tile_str} ---"
+                    )
+                    ds_lds = compute_lds_for_tile(
+                        tile, start_year, end_year, ALPHA_VALUES
+                    )
+                    ds_lds.to_netcdf(tmp_path, engine="netcdf4")
+                    os.rename(tmp_path, lds_file)  # atomic on POSIX/HPC
+                    del ds_lds
+                except Exception as e:
+                    print(f"  [ERROR] Long-duration storage {tile_str}: {e}")
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+            else:
+                print(
+                    f"\n--- Long-duration storage already exists, skipping Tile: {tile_str} ---"
+                )
 
         # out_file = output_dir / f"processed_{tile_str}_{start_year}_{end_year}.nc"
 
