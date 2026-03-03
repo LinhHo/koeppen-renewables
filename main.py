@@ -33,6 +33,7 @@ from src.variability import run_seasonal_variability_for_tile, get_complementari
 from src.demand import (
     compute_demand_settlement_proximity,
 )  # , run_demand_potential_for_tile
+from src.storage import compute_lds_for_tile, ALPHA_VALUES
 
 # from src.OLD_plots import plot_all
 from config import (
@@ -62,6 +63,9 @@ def parse_args():
         default=(START_YEAR, END_YEAR),
         help="Start and end year",
     )
+    parser.add_argument("--with-complementarity", action="store_true")
+    parser.add_argument("--with-lds", action="store_true")
+
     return parser.parse_args()
 
 
@@ -77,6 +81,8 @@ def main():
 
     output_dir = REPO_ROOT / "results" / "automatic"
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "complementarity").mkdir(exist_ok=True)
+    (output_dir / "storage").mkdir(exist_ok=True)
 
     tiles = generate_tiles(
         domain["minx"], domain["miny"], domain["maxx"], domain["maxy"], args.tile_size
@@ -91,20 +97,32 @@ def main():
         # Simplified naming: minx_miny_maxx_maxy
         tile_str = "_".join(map(str, tile))
 
-        complementarity_file = (
+    # ── Complementarity (unchanged logic, now guarded) ──────────
+    if args.with_complementarity:
+        comp_file = (
             output_dir
             / f"complementarity/complementarity_{tile_str}_{start_year}_{end_year}.nc"
         )
-        if not complementarity_file.exists():
-            print(f"\n--- Computing Complementarity for Tile: {tile_str} ---")
+        if not comp_file.exists():
             corr_index = get_complementarity_index(tile, start_year, end_year)
             with ProgressBar():
-                # This is where the actual heavy lifting happens
                 result = corr_index.compute()
-            result.to_netcdf(complementarity_file, engine="netcdf4")
-        else:
-            print(f"\n--- Tile already exists, skipping: {tile_str} ---")
-            client.close()
+            result.to_netcdf(comp_file, engine="netcdf4")
+
+    # ── Long-duration storage ────────────────────────────────────
+    if args.with_lds:
+        lds_file = output_dir / f"storage/lds_{tile_str}_{start_year}_{end_year}.nc"
+        if not lds_file.exists():
+            tmp_path = str(lds_file) + ".tmp"
+            try:
+                ds_lds = compute_lds_for_tile(tile, start_year, end_year, ALPHA_VALUES)
+                ds_lds.to_netcdf(tmp_path, engine="netcdf4")
+                os.rename(tmp_path, lds_file)  # atomic on POSIX/HPC
+                del ds_lds
+            except Exception as e:
+                print(f"  [ERROR] Long-duration storage {tile_str}: {e}")
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
 
         # out_file = output_dir / f"processed_{tile_str}_{start_year}_{end_year}.nc"
 
