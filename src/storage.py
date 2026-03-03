@@ -203,10 +203,15 @@ def _energy_deficit_one_window(
     )
     onset.attrs.update(
         {
-            "units": "days since window start (01 Jul)",
+            "units": "day_of_window",
             "long_name": (
                 f"Onset day of worst deficit period, alpha={alpha:.1f} "
                 "(0-based integer; day 0 = 01 Jul of window year)"
+            ),
+            "note": (
+                "Integer index into the Jul-Jun window. "
+                "Convert to calendar date: "
+                "pd.Timestamp(f'{year}-07-01') + pd.to_timedelta(value, unit='D')"
             ),
         }
     )
