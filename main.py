@@ -172,6 +172,10 @@ def main():
         #         ds_main["demand_proximity_fraction"] = (
         #             ds_main["demand_settlement_proximity_m2"] / pixel_area
         #         ).clip(0, 1)
+        # demand_proximity_fraction = (
+        #     ds_main["demand_settlement_proximity_m2"] / pixel_area
+        # ).clip(0, 1)
+        # ds_main["demand_proximity_fraction_normalised"] = (demand_proximity_fraction - demand_proximity_fraction.min())/ (demand_proximity_fraction.max() - demand_proximity_fraction.min())
 
         #         # Atomic Save (HPC Safe)
         #         tmp_path = str(out_file) + ".tmp"
