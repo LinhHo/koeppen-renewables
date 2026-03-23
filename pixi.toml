@@ -10,7 +10,7 @@ version = "0.1.0"
 test-NL = "python main.py --bounds 0 40 10 55"
 test-zero = "python main.py --bounds -10 -10 10 10"
 # Run the full global processing 'pixi run global'
-global = "python main.py --global"
+global = "python main.py --bounds -180 -60 180 80"
 # Or run specific bounds for Europe
 europe = "python main.py --bounds -20 35 40 70"
 # Helper to clean temporary files
