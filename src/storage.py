@@ -1,145 +1,51 @@
 """
-storage.py
-==========
-Computes the long-duration energy deficit metric for each grid cell.
+storage.py: Peak Energy Deficit (LDS) Calculation
+=================================================
+Calculates the maximum drawdown of storage required to bridge energy deficits
+under a unit-load assumption, following Antonini et al. (2024, https://www.nature.com/articles/s41597-024-04129-8).
 
-For each (lat, lon) cell the metric answers:
-    "If this location generates a mix of wind (fraction α) and solar
-     (fraction 1−α), how many days-worth of mean generation would a
-     perfect storage device need to discharge to cover the worst
-     consecutive energy deficit in a given winter-centred year?"
-
-Output
-------
-4-D NetCDF with dimensions (alpha, year, latitude, longitude) and
-data variable ``energy_deficit_days``.
-
-``year`` labels the *July start* of the window:
-    year=2024  →  01 Jul 2024 – 30 Jun 2025
-
-Winter-centred window rationale
---------------------------------
-Dunkelflaute (dark-doldrums) events — simultaneous wind and solar lulls
-— occur in boreal winter (Nov–Feb) and are always near the centre of a
-Jul–Jun window.  Centring on winter avoids:
-  - the artificial year-end seam that the cyclic-extension trick patches,
-  - any deficit that straddles 31 Dec / 1 Jan being split across two
-    analysis windows and therefore under-counted.
-
-Algorithm
----------
-For a 365-day window, compute the normalised combined generation:
-
-    G(t, α) = α · W̃(t) + (1−α) · S̃(t)
-
-where W̃ and S̃ are each divided by their own window mean (so the
-mixture has unit mean by construction, and α is a true capacity-share
-weight independent of physical units).
-
-Instantaneous imbalance relative to flat unit demand:
-
-    δ(t) = 1 − G(t, α)          (+ve when generation < demand)
-
-Cumulative energy deficit:
-
-    E(t) = Σ_{τ=0}^{t} δ(τ)     [days of mean combined generation]
-
-Peak energy deficit (= maximum storage discharge needed without
-recharging during the window):
-
-    D = max_{t₂ ≥ t₁} [ E(t₂) − E(t₁) ]
-      = max_t [ E(t) − running_min_t E(t) ]
-
-Key design decisions
---------------------
-- Window:  01 Jul → 30 Jun  (365 days after removing leap days)
-- Year label: calendar year of the July start
-- Resolution: daily (ERA5 daily mean/sum); sub-daily diurnal cycling is
-  short-duration-battery territory
-- Normalise each resource by its own window mean before mixing
-- α sweep: 0.0 (pure solar) → 1.0 (pure wind), step 0.1
-- No cyclic extension needed: winter-centred window is self-contained
-
-References
-----------
-Antonini et al. (2024), Commun. Earth Environ. 5:103
-Dowling et al. (2020), Joule 4(9):1907-1928
+Reproducibility:
+- Window: 01 July to 30 June (365 days, leap days removed).
+- Normalization: Wind (W) and Solar (S) are normalized by their specific window mean.
+- Combined Generation: G(t, α) = α·W_norm + (1−α)·S_norm.
+- Metric: Peak Deficit D = max_t [ E(t) − min_{τ≤t} E(τ) ] over a cyclically extended period.
 """
 
 import numpy as np
 import xarray as xr
 from typing import Tuple
-from pathlib import Path
-
 from src.geo_processing import load_era5_variable
 from config import ERA5_ZARR_URL
-
-Tile = Tuple[float, float, float, float]
 
 # α values: wind capacity share (0.0 = pure solar, 1.0 = pure wind)
 ALPHA_VALUES = np.round(np.arange(0.0, 1.0 + 1e-9, 0.1), decimals=1)
 
 
-# ---------------------------------------------------------------------------
-# Core: peak energy deficit from a cumulative imbalance series
-# ---------------------------------------------------------------------------
-
-
-def _peak_energy_deficit(
-    cum_imbalance: xr.DataArray,
-    time_dim: str = "time",
-):
+def _peak_energy_deficit_cyclic(cum_imbalance: xr.DataArray, time_dim: str = "day"):
     """
-    Peak energy deficit (maximum drawdown) and deficit onset day.
-
-    At each time step t the drawdown is how far E has risen above the
-    deepest trough seen so far:
-
-        dd(t) = E(t) - min_{tau <= t} E(tau)
-
-    Peak deficit D* = max_t dd(t)  [float32, days of mean generation].
-
-    Onset definition
-    ----------------
-    The deficit period producing D* starts at the trough t_trough that
-    precedes the argmax of dd:
-
-        t_peak   = argmax_t dd(t)              <- storage fully discharged
-        t_trough = argmin_{tau <= t_peak} E(tau) <- storage starts discharging
-
-    onset_day is t_trough as a 0-based integer day-of-window
-    (day 0 = 01 Jul of the window year).
-
-    Float precision
-    ---------------
-    Casting to float32 before cumsum ensures the deficit is fractional
-    (e.g. 4.5 days) rather than an integer step count.
-
-    Parameters
-    ----------
-    cum_imbalance : DataArray with dim time_dim, float
-    time_dim : str
-
-    Returns
-    -------
-    deficit : DataArray (spatial) float32  [days]
-    onset   : DataArray (spatial) int16    [0-based day-of-window]
+    Core math for Energy Deficit using Cyclic Extension.
+    1. Duplicate series (2*T) to handle deficits straddling the window boundary.
+    2. Drawdown(t) = Current level - Running minimum.
+    3. Return peak deficit and onset day relative to the original window.
     """
-    da = cum_imbalance.astype("float32").chunk({time_dim: -1})
-    T = da.sizes[time_dim]
+    da = cum_imbalance.astype("float32")
+    T = 365  # Fixed window length from noleap calendar
 
-    # Running minimum: deepest trough seen up to each step
-    run_min = da.rolling({time_dim: T}, min_periods=1).min()
-    drawdown = da - run_min  # float32, shape (..., T)
+    # Cyclic extension: Concat to handle boundary seams
+    # Add the total sum of the first period to the second to maintain integration
+    final_val = da.isel({time_dim: -1})
+    cum_extended = xr.concat([da, da + final_val], dim=time_dim)
 
-    # Peak deficit value
-    deficit = drawdown.max(dim=time_dim)  # float32, spatial only
+    # Find the minimum level seen in a rolling window of size T
+    run_min = cum_extended.rolling({time_dim: T}, min_periods=1).min()
+    drawdown_ext = cum_extended - run_min
 
-    # Step 1: time index of the peak drawdown
-    t_peak_idx = drawdown.argmax(dim=time_dim)  # int, spatial only
+    # Extract results and identify peak within the first period
+    drawdown = drawdown_ext.isel({time_dim: slice(0, T)})
+    deficit = drawdown.max(dim=time_dim)
 
-    # Step 2: argmin of E(t) for t <= t_peak  ->  onset trough index
-    # Replace future steps with +inf so argmin always falls in valid range
+    # Onset calculation: find the deepest trough (argmin) preceding the peak drawdown
+    t_peak_idx = drawdown.argmax(dim=time_dim)
     t_coord = xr.DataArray(np.arange(T, dtype=np.int16), dims=[time_dim])
     da_masked = da.where(t_coord <= t_peak_idx, other=np.inf)
     onset = da_masked.argmin(dim=time_dim).astype("int16")
@@ -147,121 +53,13 @@ def _peak_energy_deficit(
     return deficit, onset
 
 
-# ---------------------------------------------------------------------------
-# Single Jul–Jun window × single α
-# ---------------------------------------------------------------------------
-
-
-def _energy_deficit_one_window(
-    wind_window: xr.DataArray,
-    solar_window: xr.DataArray,
-    alpha: float,
-    time_dim: str = "valid_time",
-) -> xr.DataArray:
-    """
-    Peak energy deficit for one Jul–Jun window and one α.
-
-    Parameters
-    ----------
-    wind_window  : daily mean wind speed, shape (T≈365, lat, lon)
-    solar_window : daily sum solar radiation, shape (T≈365, lat, lon)
-    alpha        : wind capacity share [0, 1]
-    time_dim     : name of the time coordinate
-
-    Returns
-    -------
-    deficit : DataArray (lat, lon) float32 — peak energy deficit in days.
-    onset   : DataArray (lat, lon) int16   — 0-based day-of-window of deficit start.
-    """
-    # ── Normalise by window mean ──────────────────────────────────────────
-    # xr.where avoids division-by-zero in polar-night or permanently calm cells
-    wind_mean = wind_window.mean(dim=time_dim)
-    solar_mean = solar_window.mean(dim=time_dim)
-
-    wind_norm = xr.where(wind_mean > 0, wind_window / wind_mean, 0.0)
-    solar_norm = xr.where(solar_mean > 0, solar_window / solar_mean, 0.0)
-
-    # ── Combined normalised generation ────────────────────────────────────
-    # Mean of G = α·1 + (1−α)·1 = 1 by construction
-    G = alpha * wind_norm + (1.0 - alpha) * solar_norm
-
-    # ── Cumulative imbalance ──────────────────────────────────────────────
-    imbalance = 1.0 - G  # +ve when below demand
-    cum_imbalance = imbalance.cumsum(dim=time_dim)
-
-    # ── Peak deficit + onset ─────────────────────────────────────────────
-    deficit, onset = _peak_energy_deficit(cum_imbalance, time_dim=time_dim)
-
-    deficit.attrs.update(
-        {
-            "units": "days",
-            "long_name": (
-                f"Peak energy deficit, alpha={alpha:.1f} "
-                "(days of mean combined generation, float)"
-            ),
-        }
-    )
-    onset.attrs.update(
-        {
-            "units": "day_of_window",
-            "long_name": (
-                f"Onset day of worst deficit period, alpha={alpha:.1f} "
-                "(0-based integer; day 0 = 01 Jul of window year)"
-            ),
-            "note": (
-                "Integer index into the Jul-Jun window. "
-                "Convert to calendar date: "
-                "pd.Timestamp(f'{year}-07-01') + pd.to_timedelta(value, unit='D')"
-            ),
-        }
-    )
-    return deficit, onset
-
-
-# ---------------------------------------------------------------------------
-# Tile-level entry point: all winter-years × all α values
-# ---------------------------------------------------------------------------
-
-
 def compute_lds_for_tile(
-    tile: Tile,
-    start_year: int,
-    end_year: int,
-    alpha_values: np.ndarray = ALPHA_VALUES,
-) -> xr.Dataset:
+    tile: Tuple[float, ...], start_year: int, end_year: int, alpha_values=ALPHA_VALUES
+):
     """
-    Compute peak energy deficit for every (winter-year, α) for one tile.
-
-    Window labelling
-    ----------------
-    year Y  →  01 Jul Y – 30 Jun (Y+1)
-
-    ERA5 is loaded from {start_year}-01-01 to {end_year}-12-31 (full
-    calendar years, as required by load_era5_variable), then sub-sliced
-    to Jul–Jun windows.
-
-    The first complete window is labelled start_year (needs data from
-    01 Jul start_year); the last is labelled (end_year − 1) (needs data
-    through 30 Jun end_year).
-
-    Example:  start_year=1995, end_year=2025
-        → windows 1995 … 2024  (30 windows)
-        → ERA5 data 1995-01-01 … 2025-12-31
-
-    Parameters
-    ----------
-    tile        : (minx, miny, maxx, maxy)
-    start_year  : first window label (= calendar year of July start)
-    end_year    : last calendar year loaded (= last window label + 1)
-    alpha_values: 1-D array of α values to sweep
-
-    Returns
-    -------
-    xr.Dataset
-        Variable ``energy_deficit_days``,
-        dims (alpha, year, latitude, longitude).
+    Processes July-June windows. Year Y label = 01 Jul Y to 30 Jun Y+1.
+    Uses vectorized stacking to prevent Dask scheduler metadata conflicts.
     """
-    # ── 1. Load full ERA5 period ──────────────────────────────────────────
     wind_raw = load_era5_variable(
         ERA5_ZARR_URL, "ws100", tile, start_year, end_year, daily_sum=False
     )
@@ -269,108 +67,344 @@ def compute_lds_for_tile(
         ERA5_ZARR_URL, "ssrd", tile, start_year, end_year, daily_sum=True
     )
 
-    if wind_raw is None or solar_raw is None:
-        raise ValueError(f"ERA5 load returned None for tile {tile}")
+    # Leap days removed to keep all windows exactly 365 days
+    wind_raw = wind_raw.convert_calendar("noleap", dim="valid_time")  # .persist()
+    solar_raw = solar_raw.convert_calendar("noleap", dim="valid_time")  # .persist()
 
-    # Drop leap days: every Jul–Jun window will have exactly 365 days
-    wind_raw = wind_raw.convert_calendar("noleap", dim="valid_time")
-    solar_raw = solar_raw.convert_calendar("noleap", dim="valid_time")
-
-    # Persist in worker memory once; reused across all window/alpha iterations
-    wind_raw = wind_raw.persist()
-    solar_raw = solar_raw.persist()
-
-    # ── 2. Winter-year labels ─────────────────────────────────────────────
-    # year Y needs data through 30 Jun Y+1, so last label is end_year - 1
     window_years = list(range(start_year, end_year))
-
-    # ── 3. Outer loop: α; inner loop: year ───────────────────────────────
-    # Computing one (year × α) slice at a time keeps the dask graph small
-    # and avoids accumulating a huge lazy graph before the first .compute().
     results_by_alpha = []
 
     for alpha in alpha_values:
-        results_by_year = []
+        # print(f"--- Computing alpha={alpha} for Tile: {'_'.join(map(str, tile))} ---")
+        yearly_imbalances = []
 
         for yr in window_years:
-            w_start = f"{yr}-07-01"
-            w_end = f"{yr + 1}-06-30"
+            w_start, w_end = f"{yr}-07-01", f"{yr + 1}-06-30"
+            try:
+                wind_w = wind_raw.sel(valid_time=slice(w_start, w_end))
+                solar_w = solar_raw.sel(valid_time=slice(w_start, w_end))
 
-            wind_w = wind_raw.sel(valid_time=slice(w_start, w_end)).chunk(
-                {"valid_time": -1, "latitude": -1, "longitude": -1}
-            )
-            solar_w = solar_raw.sel(valid_time=slice(w_start, w_end)).chunk(
-                {"valid_time": -1, "latitude": -1, "longitude": -1}
-            )
+                if len(wind_w.valid_time) != 365:
+                    continue
 
-            n_days = wind_w.sizes["valid_time"]
-            if n_days < 360:
-                print(
-                    f"  [WARN] Window {yr} ({w_start}→{w_end}): "
-                    f"only {n_days} days — skipping"
+                # Normalization: Wind and Solar divided by their specific window mean
+                w_norm = wind_w / wind_w.mean("valid_time")
+                s_norm = solar_w / solar_w.mean("valid_time")
+
+                G = alpha * w_norm.fillna(0) + (1.0 - alpha) * s_norm.fillna(0)
+                imb = (1.0 - G).cumsum(dim="valid_time")
+
+                # Prepare for stacking: rename time to a generic 'day' index
+                imb = imb.assign_coords(valid_time=np.arange(365)).rename(
+                    {"valid_time": "day"}
                 )
+                yearly_imbalances.append(imb.assign_coords(year=yr).expand_dims("year"))
+            except Exception:
                 continue
 
-            # Compute immediately to bound memory usage per iteration
-            deficit_yr, onset_yr = _energy_deficit_one_window(
-                wind_w,
-                solar_w,
-                alpha=float(alpha),
-                time_dim="valid_time",
-            )
-            deficit_yr = deficit_yr.compute()
-            onset_yr = onset_yr.compute()
-
-            deficit_yr = deficit_yr.assign_coords(year=yr).expand_dims("year")
-            onset_yr = onset_yr.assign_coords(year=yr).expand_dims("year")
-
-            results_by_year.append((deficit_yr, onset_yr))
-
-        if not results_by_year:
+        if not yearly_imbalances:
             continue
 
-        deficit_alpha = (
-            xr.concat([r[0] for r in results_by_year], dim="year")
-            .assign_coords(alpha=float(alpha))
-            .expand_dims("alpha")
+        # Vectorized step: Stack all years and compute LDS in one single graph per alpha
+        alpha_stack = xr.concat(yearly_imbalances, dim="year").chunk(
+            {"year": 1, "day": -1}
         )
-        onset_alpha = (
-            xr.concat([r[1] for r in results_by_year], dim="year")
-            .assign_coords(alpha=float(alpha))
-            .expand_dims("alpha")
+        def_alpha, onset_alpha = _peak_energy_deficit_cyclic(
+            alpha_stack, time_dim="day"
         )
-        results_by_alpha.append((deficit_alpha, onset_alpha))
 
-    if not results_by_alpha:
-        raise RuntimeError(f"No valid windows computed for tile {tile}")
+        # # Execute the computation for the entire alpha slice
+        # def_alpha, onset_alpha = xr.compute(def_alpha, onset_alpha)
 
-    # ── 4. Assemble (alpha, year, lat, lon) ───────────────────────────────
+        results_by_alpha.append(
+            (
+                def_alpha.assign_coords(alpha=float(alpha)).expand_dims("alpha"),
+                onset_alpha.assign_coords(alpha=float(alpha)).expand_dims("alpha"),
+            )
+        )
+
+    # Assemble final Dataset (alpha, year, lat, lon)
     deficit_full = xr.concat([r[0] for r in results_by_alpha], dim="alpha")
     onset_full = xr.concat([r[1] for r in results_by_alpha], dim="alpha")
 
     return xr.Dataset(
-        {
-            "energy_deficit_days": deficit_full,
-            "deficit_onset_day": onset_full,
-        },
+        {"energy_deficit_days": deficit_full, "deficit_onset_day": onset_full},
         attrs={
-            "description": (
-                "Peak energy deficit and onset day for a wind-solar hybrid system. "
-                "energy_deficit_days[alpha, year, lat, lon] = maximum consecutive "
-                "energy shortfall in days of mean combined generation (float). "
-                "deficit_onset_day[alpha, year, lat, lon] = 0-based day-of-window "
-                "when the worst deficit period begins (day 0 = 01 Jul of window year). "
-                "year = calendar year of the July window start "
-                "(year Y covers 01 Jul Y - 30 Jun Y+1)."
-            ),
-            "alpha_definition": "alpha=1.0 pure wind  |  alpha=0.0 pure solar",
-            "window": "01 Jul (year) to 30 Jun (year+1), leap days removed",
-            "units_deficit": "days (float32)",
-            "units_onset": "days since 01 Jul of window year (int16)",
-            "ERA5_period": f"{start_year}-01-01 to {end_year}-12-31",
-            "normalisation": (
-                "Wind and solar each divided by their own window mean "
-                "before alpha-weighting; mixture has unit mean by construction."
-            ),
+            "description": "Peak energy deficit and onset day following Antonini (2024).",
+            "alpha_definition": "alpha=1.0 pure wind | alpha=0.0 pure solar",
+            "window": "01 Jul to 30 Jun, leap days removed",
         },
     )
+
+
+# def _peak_energy_deficit_cyclic(cum_imbalance: xr.DataArray, time_dim: str = "time"):
+#     """
+#     Core math for Energy Deficit using Cyclic Extension.
+
+#     1. Duplicate series (2*T) to handle deficits straddling the window boundary.
+#     2. Drawdown(t) = Current level - Running minimum.
+#     3. Return peak deficit and onset day relative to the original window.
+#     """
+#     da = cum_imbalance.astype("float32").chunk({time_dim: -1})
+#     T = da.sizes[time_dim]
+
+#     # Cyclic extension: Concat to handle boundary seams (jump between day 1 and 365)
+#     # We add the total sum of the first period to the second to maintain integration
+#     cum_extended = xr.concat([da, da + da.isel({time_dim: -1})], dim=time_dim)
+
+#     # Find the minimum level seen in a rolling window of size T
+#     run_min = cum_extended.rolling({time_dim: T}, min_periods=1).min()
+#     drawdown_ext = cum_extended - run_min
+
+#     # Extract results and identify peak within the first period
+#     drawdown = drawdown_ext.isel({time_dim: slice(0, T)})
+#     deficit = drawdown.max(dim=time_dim)
+
+#     # Onset calculation: argmin of E(t) preceding peak drawdown
+#     t_peak_idx = drawdown.argmax(dim=time_dim)
+#     t_coord = xr.DataArray(np.arange(T, dtype=np.int16), dims=[time_dim])
+#     da_masked = da.where(t_coord <= t_peak_idx, other=np.inf)
+#     onset = da_masked.argmin(dim=time_dim).astype("int16")
+
+#     return deficit, onset
+
+
+# def compute_lds_for_tile(
+#     tile: Tuple[float, ...], start_year: int, end_year: int, alpha_values=ALPHA_VALUES
+# ):
+#     """
+#     Processes July-June windows. Year Y label = 01 Jul Y to 30 Jun Y+1.
+#     """
+#     wind_raw = load_era5_variable(
+#         ERA5_ZARR_URL, "ws100", tile, start_year, end_year, daily_sum=False
+#     )
+#     solar_raw = load_era5_variable(
+#         ERA5_ZARR_URL, "ssrd", tile, start_year, end_year, daily_sum=True
+#     )
+
+#     # Leap days removed to keep all windows exactly 365 days
+#     wind_raw = wind_raw.convert_calendar("noleap", dim="valid_time").persist()
+#     solar_raw = solar_raw.convert_calendar("noleap", dim="valid_time").persist()
+
+#     window_years = list(range(start_year, end_year))
+#     results_by_alpha = []
+
+#     for alpha in alpha_values:
+#         results_by_year = []
+#         for yr in window_years:
+#             w_start, w_end = f"{yr}-07-01", f"{yr + 1}-06-30"
+#             try:
+#                 wind_w = wind_raw.sel(valid_time=slice(w_start, w_end)).chunk(
+#                     {"valid_time": -1}
+#                 )
+#                 solar_w = solar_raw.sel(valid_time=slice(w_start, w_end)).chunk(
+#                     {"valid_time": -1}
+#                 )
+
+#                 # Normalization and Mixture
+#                 w_norm = wind_w / wind_w.mean("valid_time")
+#                 s_norm = solar_w / solar_w.mean("valid_time")
+#                 G = alpha * w_norm.fillna(0) + (1.0 - alpha) * s_norm.fillna(0)
+
+#                 # Peak deficit using cyclic logic
+#                 imb = 1.0 - G
+#                 cum_imb = imb.cumsum(dim="valid_time")
+#                 deficit_yr, onset_yr = _peak_energy_deficit_cyclic(
+#                     cum_imb, "valid_time"
+#                 )
+
+#                 results_by_year.append((deficit_yr.compute(), onset_yr.compute()))
+#             except Exception:
+#                 continue
+
+#         if not results_by_year:
+#             continue
+
+#         deficit_alpha = (
+#             xr.concat([r[0] for r in results_by_year], dim="year")
+#             .assign_coords(alpha=float(alpha))
+#             .expand_dims("alpha")
+#         )
+#         onset_alpha = (
+#             xr.concat([r[1] for r in results_by_year], dim="year")
+#             .assign_coords(alpha=float(alpha))
+#             .expand_dims("alpha")
+#         )
+#         results_by_alpha.append((deficit_alpha, onset_alpha))
+
+#     if not results_by_alpha:
+#         raise RuntimeError(f"No valid windows computed for tile {tile}")
+
+#     # ── 4. Assemble (alpha, year, lat, lon) ───────────────────────────────
+#     deficit_full = xr.concat([r[0] for r in results_by_alpha], dim="alpha")
+#     onset_full = xr.concat([r[1] for r in results_by_alpha], dim="alpha")
+
+#     return xr.Dataset(
+#         {
+#             "energy_deficit_days": deficit_full,
+#             "deficit_onset_day": onset_full,
+#         },
+#         attrs={
+#             "description": (
+#                 "Peak energy deficit and onset day for a wind-solar hybrid system. "
+#                 "energy_deficit_days[alpha, year, lat, lon] = maximum consecutive "
+#                 "energy shortfall in days of mean combined generation (float). "
+#                 "deficit_onset_day[alpha, year, lat, lon] = 0-based day-of-window "
+#                 "when the worst deficit period begins (day 0 = 01 Jul of window year). "
+#                 "year = calendar year of the July window start "
+#                 "(year Y covers 01 Jul Y - 30 Jun Y+1)."
+#             ),
+#             "alpha_definition": "alpha=1.0 pure wind  |  alpha=0.0 pure solar",
+#             "window": "01 Jul (year) to 30 Jun (year+1), leap days removed",
+#             "units_deficit": "days (float32)",
+#             "units_onset": "days since 01 Jul of window year (int16)",
+#             "ERA5_period": f"{start_year}-01-01 to {end_year}-12-31",
+#             "normalisation": (
+#                 "Wind and solar each divided by their own window mean "
+#                 "before alpha-weighting; mixture has unit mean by construction."
+#             ),
+#         },
+#     )
+
+
+###
+## HELPER TO PLOT STORAGE
+###
+
+"""
+aggregate_lds.py
+================
+Notebook-friendly function to aggregate the per-year LDS metric tiles
+into a single (lat, lon) dataset.
+"""
+
+from pathlib import Path
+import numpy as np
+import xarray as xr
+
+
+def aggregate_lds(
+    lds_dir: str | Path,
+    metric: str = "mean",
+    fixed_alpha: float | None = None,
+) -> xr.Dataset:
+    """
+    Load all LDS tile files, aggregate across years, return (lat, lon) dataset.
+
+    Parameters
+    ----------
+    lds_dir : str or Path
+        Directory containing lds_*.nc files produced by storage.py.
+    metric : {"mean", "p99", "max"}
+        How to aggregate the per-year energy deficit across years:
+          "mean" — representative planning value
+          "p99"  — 99th-percentile, near-worst-case design value
+          "max"  — absolute worst year
+    fixed_alpha : float or None
+        If given, report the metric at this specific alpha instead of
+        finding the optimal (minimising) alpha. Must be one of the alpha
+        values stored in the files (e.g. 0.0, 0.1, ..., 1.0).
+
+    Returns
+    -------
+    xr.Dataset with dims (latitude, longitude) and variables:
+        duration_metric  float32  [days]
+            Aggregated energy deficit at the optimal (or fixed) alpha.
+        optimal_alpha    float32  [0–1]
+            Wind capacity share that minimises duration_metric.
+            Equals fixed_alpha everywhere when fixed_alpha is provided.
+    """
+    lds_dir = Path(lds_dir)
+    metric = metric.lower()
+
+    if metric not in {"mean", "p99", "max"}:
+        raise ValueError(f"metric must be 'mean', 'p99', or 'max'; got {metric!r}")
+
+    # ── 1. Load tiles ──────────────────────────────────────────────────────
+    files = sorted(lds_dir.glob("lds_*.nc"))
+    if not files:
+        raise FileNotFoundError(f"No lds_*.nc files found in {lds_dir}")
+
+    print(f"Loading {len(files)} tile(s)...")
+    tile_datasets = [xr.open_dataset(f, decode_times=False) for f in files]
+    ds = (
+        tile_datasets[0]
+        if len(tile_datasets) == 1
+        else xr.combine_by_coords(tile_datasets, combine_attrs="override")
+    )
+
+    # (alpha, year, latitude, longitude) float32
+    eld = ds["energy_deficit_days"].astype("float32")
+
+    # ── 2. Aggregate across years ──────────────────────────────────────────
+    # skipna=True so that ocean/missing cells (all-NaN alpha slices) stay NaN
+    # rather than raising an error.
+    print(f"Aggregating across years using metric={metric!r}...")
+    if metric == "mean":
+        agg = eld.mean(dim="year", skipna=True)
+    elif metric == "p99":
+        agg = eld.quantile(0.99, dim="year", skipna=True).drop_vars("quantile")
+    elif metric == "max":
+        agg = eld.max(dim="year", skipna=True)
+    # agg shape: (alpha, latitude, longitude)
+
+    # ── 3. Select alpha ────────────────────────────────────────────────────
+    if fixed_alpha is not None:
+        alpha_vals = agg.alpha.values
+        if not np.any(np.isclose(alpha_vals, fixed_alpha, atol=1e-6)):
+            raise ValueError(
+                f"fixed_alpha={fixed_alpha} not in file. "
+                f"Available: {alpha_vals.tolist()}"
+            )
+        print(f"Using fixed alpha={fixed_alpha}...")
+        agg_sel = agg.sel(alpha=fixed_alpha, method="nearest").drop_vars("alpha")
+        alpha_map = xr.full_like(agg_sel, fill_value=float(fixed_alpha))
+
+    else:
+        # argmin over alpha; skipna keeps NaN cells as NaN instead of crashing
+        print("Finding optimal alpha (minimises duration_metric)...")
+        alpha_idx = agg.argmin(dim="alpha", skipna=True).compute()  # (lat, lon) int
+
+        agg_sel = agg.isel(alpha=alpha_idx).drop_vars("alpha", errors="ignore")
+
+        alpha_vals = agg.alpha.values  # 1-D numpy
+        alpha_map = xr.DataArray(
+            alpha_vals[alpha_idx.values].astype("float32"),
+            dims=agg_sel.dims,
+            coords={k: agg_sel.coords[k] for k in agg_sel.dims},
+        )
+        # Cells that were all-NaN stay NaN in agg_sel; mirror that in alpha_map
+        alpha_map = alpha_map.where(agg_sel.notnull())
+
+    # ── 4. Build output dataset ────────────────────────────────────────────
+    agg_sel = agg_sel.astype("float32")
+    alpha_map = alpha_map.astype("float32")
+
+    agg_sel.attrs = {
+        "long_name": f"Energy deficit duration ({metric} across years)",
+        "units": "days",
+        "metric": metric,
+    }
+    alpha_map.attrs = {
+        "long_name": (
+            "Fixed alpha"
+            if fixed_alpha is not None
+            else "Optimal wind capacity share (minimises duration_metric)"
+        ),
+        "units": "dimensionless",
+        "note": "alpha=1.0 pure wind | alpha=0.0 pure solar",
+    }
+
+    ds_out = xr.Dataset(
+        {"duration_metric": agg_sel, "optimal_alpha": alpha_map},
+        attrs={
+            "description": (
+                f"LDS metric aggregated from Jul-Jun windows. metric={metric}. "
+                "optimal_alpha = wind share minimising duration_metric."
+            ),
+            "source_dir": str(lds_dir),
+            "n_tiles": len(files),
+        },
+    )
+    print("Done.")
+    return ds_out
