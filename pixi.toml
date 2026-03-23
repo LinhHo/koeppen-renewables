@@ -36,3 +36,6 @@ jupyterlab = ">=4.5.2,<5"
 seaborn = ">=0.13.2,<0.14"
 regionmask = ">=0.13.0,<0.14"
 flox = ">=0.11.1,<0.12"
+
+# pycountry <<<<<, to add
+# esda

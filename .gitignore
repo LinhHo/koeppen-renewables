@@ -8,6 +8,7 @@ resources/
 *.parquet
 *.ipynb
 *.zarr/
+OLD*/
 
 # Secrets
 .env

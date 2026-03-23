@@ -244,6 +244,20 @@ def determine_pixel_areas(raster_input):
 
     return pixel_area_da
 
+def calculate_grid_cell_areas(lat: np.ndarray, lon: np.ndarray) -> np.ndarray:
+    """
+    Calculate accurate grid cell areas using WGS84 ellipsoid.
+
+    Returns 2D array in km²
+    """
+    dlat = np.abs(np.diff(lat).mean()) if len(lat) > 1 else 0.25
+    pixel_size = dlat
+
+    areas_1d = np.array([_area_of_pixel(pixel_size, lat_val) for lat_val in lat])
+    areas_2d = np.repeat(areas_1d[:, np.newaxis], len(lon), axis=1)
+    areas_km2 = areas_2d / 1e6  # Convert m² to km²
+
+    return areas_km2
 
 # def get_tile_cell_areas(tile, res=0.25):
 #     """

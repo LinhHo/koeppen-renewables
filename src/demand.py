@@ -23,13 +23,14 @@ import rioxarray as rxr
 from scipy.signal import convolve2d
 
 from src.geo_processing import (
-    load_era5_variable,
+    # load_era5_variable,
     clip_and_resample,
     create_tile_template,
+    determine_pixel_areas,
 )
 
 from config import (
-    ERA5_ZARR_URL,
+    # ERA5_ZARR_URL,
     REFERENCE_RESOLUTION,
     DEMAND_WEIGHTING_BUFFER,
 )
@@ -37,74 +38,9 @@ from config import (
 
 Tile = Tuple[float, float, float, float]
 
-# ============================================================
-# 1. Climate-driven demand (ERA5 temperature)
-# ============================================================
-
-# Estimate from Staffel et al. (2024) Fig 1c (no data provided)
-T_heat = 14  # °C
-T_cool = 22  # °C
-alpha_heat = 0.6  # kWh / day / °C
-alpha_cool = 0.7  # kWh / day / °C
-
-
-def compute_temperature_demand_indicator(
-    bounds: Tile,
-    start_year: int,
-    end_year: int,
-):
-    """
-    Compute climate-driven electricity demand intensity from temperature.
-
-    Parameters
-    ----------
-    tas : xr.DataArray
-        ERA5 2m air temperature [K], climatological time series.
-    T_heat, T_cool : float
-        Heating and cooling threshold temperatures [°C].
-    alpha_heat, alpha_cool : float
-        Linear demand coefficients [relative units per °C per timestep].
-    time_dim : str
-        Time dimension name.
-
-    Returns
-    -------
-    xr.DataArray
-        Dimensionless climate demand indicator.
-    """
-
-    # Load ERA5 temperature
-    da = load_era5_variable(
-        ERA5_ZARR_URL,
-        "t2m",
-        bounds=bounds,
-        start_year=start_year,
-        end_year=end_year,
-    )
-
-    # Chunk spatially; keep full time for climatology
-    da = da.chunk({"valid_time": -1, "latitude": 10, "longitude": 10})
-
-    # Convert to Celsius, compute based on climatology
-    T = da - 273.15
-    T_clim = T.groupby("valid_time.dayofyear").mean("valid_time")
-
-    # Heating and cooling components
-    heating = alpha_heat * xr.where(T_clim < T_heat, T_heat - T_clim, 0.0)
-    cooling = alpha_cool * xr.where(T_clim > T_cool, T_clim - T_cool, 0.0)
-
-    # Aggregate over time
-    demand_temperature_induced = (heating + cooling).sum(dim="dayofyear")
-
-    return demand_temperature_induced.rename("demand_temperature_induced")
-
-    # # Quantile normalisation to get a dimensionless indicator of demand induced by temperature
-    # scale = demand_temperature_induced.quantile(0.95)
-    # return xr.where(scale > 0, demand_temperature_induced / scale, 0).clip(0, 1)
-
 
 # ============================================================
-# 2. Settlement-driven demand potential (buffered convolution)
+# Settlement-driven demand potential (buffered convolution)
 # ============================================================
 
 
@@ -115,7 +51,7 @@ def compute_demand_settlement_proximity(
 ) -> xr.DataArray:
     """
     Resample settlement data onto a buffered reference grid.
-    Then compute inverse-distance weighted settlement demand potential.
+    Then compute inverse-distance (in degree) weighted settlement demand potential.
 
     The buffer ensures that inverse-distance weighting near tile
     boundaries is physically correct.
@@ -153,6 +89,10 @@ def compute_demand_settlement_proximity(
     ) as built:
         settlement = clip_and_resample(built, ref)
 
+    # Get fraction of settlement
+    pixel_area = determine_pixel_areas(settlement.rio.write_crs("EPSG:4326"))
+    settlement_fraction = settlement / pixel_area
+
     # Kernel radius in pixels of buffer zone
     radius = int(radius / REFERENCE_RESOLUTION)
 
@@ -171,12 +111,24 @@ def compute_demand_settlement_proximity(
     # Convolution (Dask-compatible)
     weighted_buffered = xr.apply_ufunc(
         lambda x: convolve2d(x, weights, mode="same", boundary="symm"),
-        settlement,
+        settlement_fraction,
         dask="parallelized",
-        output_dtypes=[settlement.dtype],
+        output_dtypes=[settlement_fraction.dtype],
     )
 
-    return weighted_buffered
+    # Dividing by pixel area to get fraction of demand proximity
+    # Log transform and normalise demand proximity to make it less skewed and comparable
+    demand_proximity = np.log1p(weighted_buffered)
+    demand_proximity_normalised = (demand_proximity - demand_proximity.min()) / (
+        demand_proximity.max() - demand_proximity.min()
+    ).clip(0, 1)
+
+    return xr.Dataset(
+        {
+            "settlement_m2": settlement,
+            "demand_proximity_normalised": demand_proximity_normalised,
+        },
+    )
 
 
 # # Temporarily put it here. Quantile normalisation seems to make clear jumps in demand potential on the map.
@@ -236,3 +188,68 @@ def compute_demand_settlement_proximity(
 #     # )
 
 #     return ds
+
+# # ============================================================
+# # 1. Climate-driven demand (ERA5 temperature)
+# # ============================================================
+
+# # Estimate from Staffel et al. (2024) Fig 1c (no data provided)
+# T_heat = 14  # °C
+# T_cool = 22  # °C
+# alpha_heat = 0.6  # kWh / day / °C
+# alpha_cool = 0.7  # kWh / day / °C
+
+
+# def compute_temperature_demand_indicator(
+#     bounds: Tile,
+#     start_year: int,
+#     end_year: int,
+# ):
+#     """
+#     Compute climate-driven electricity demand intensity from temperature.
+
+#     Parameters
+#     ----------
+#     tas : xr.DataArray
+#         ERA5 2m air temperature [K], climatological time series.
+#     T_heat, T_cool : float
+#         Heating and cooling threshold temperatures [°C].
+#     alpha_heat, alpha_cool : float
+#         Linear demand coefficients [relative units per °C per timestep].
+#     time_dim : str
+#         Time dimension name.
+
+#     Returns
+#     -------
+#     xr.DataArray
+#         Dimensionless climate demand indicator.
+#     """
+
+#     # Load ERA5 temperature
+#     da = load_era5_variable(
+#         ERA5_ZARR_URL,
+#         "t2m",
+#         bounds=bounds,
+#         start_year=start_year,
+#         end_year=end_year,
+#     )
+
+#     # Chunk spatially; keep full time for climatology
+#     da = da.chunk({"valid_time": -1, "latitude": 10, "longitude": 10})
+
+#     # Convert to Celsius, compute based on climatology
+#     T = da - 273.15
+#     T_clim = T.groupby("valid_time.dayofyear").mean("valid_time")
+
+#     # Heating and cooling components
+#     heating = alpha_heat * xr.where(T_clim < T_heat, T_heat - T_clim, 0.0)
+#     cooling = alpha_cool * xr.where(T_clim > T_cool, T_clim - T_cool, 0.0)
+
+#     # Aggregate over time
+#     demand_temperature_induced = (heating + cooling).sum(dim="dayofyear")
+
+#     return demand_temperature_induced.rename("demand_temperature_induced")
+
+#     # # Quantile normalisation to get a dimensionless indicator of demand induced by temperature
+#     # scale = demand_temperature_induced.quantile(0.95)
+#     # return xr.where(scale > 0, demand_temperature_induced / scale, 0).clip(0, 1)
