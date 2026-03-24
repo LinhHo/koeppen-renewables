@@ -89,7 +89,7 @@ def compute_demand_settlement_proximity(
     ) as built:
         settlement = clip_and_resample(built, ref)
 
-    # Get fraction of settlement
+    # Dividing by pixel area to get fraction of demand proximity
     pixel_area = determine_pixel_areas(settlement.rio.write_crs("EPSG:4326"))
     settlement_fraction = settlement / pixel_area
 
@@ -116,17 +116,11 @@ def compute_demand_settlement_proximity(
         output_dtypes=[settlement_fraction.dtype],
     )
 
-    # Dividing by pixel area to get fraction of demand proximity
-    # Log transform and normalise demand proximity to make it less skewed and comparable
-    demand_proximity = np.log1p(weighted_buffered)
-    demand_proximity_normalised = (demand_proximity - demand_proximity.min()) / (
-        demand_proximity.max() - demand_proximity.min()
-    ).clip(0, 1)
-
+    # Log transform demand proximity to make it less skewed and comparable
     return xr.Dataset(
         {
             "settlement_m2": settlement,
-            "demand_proximity_normalised": demand_proximity_normalised,
+            "demand_proximity_weighted_buffered": weighted_buffered,
         },
     )
 
