@@ -177,7 +177,7 @@ def main():
             for item in args.with_climatology:
                 out_path = (
                     output_dir
-                    / f"climatology/{item}_{tile_str}_{start_year}_{end_year}.nc"
+                    / f"climatology/{item}/{item}_{tile_str}_{start_year}_{end_year}.nc"
                 )
 
                 if out_path.exists():
