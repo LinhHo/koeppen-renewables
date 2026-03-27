@@ -84,9 +84,9 @@ def compute_demand_settlement_proximity(
     ref = create_tile_template(buffer_bounds, REFERENCE_RESOLUTION)
 
     # Load and resample settlement raster
-    with rxr.open_rasterio(paths["ghsl"], chunks=True).squeeze().astype(
-        "float32"
-    ) as built:
+    with rxr.open_rasterio(
+        paths["ghsl"], chunks={"x": 2048, "y": 2048}
+    ).squeeze().astype("float32") as built:
         settlement = clip_and_resample(built, ref)
 
     # Dividing by pixel area to get fraction of demand proximity
