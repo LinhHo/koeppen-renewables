@@ -145,6 +145,7 @@ def main():
                     del ds_lds
                 except Exception as e:
                     print(f"  [ERROR] Long-duration storage {tile_str}: {e}")
+                    client.restart()
                     if os.path.exists(tmp_path):
                         os.remove(tmp_path)
             else:
@@ -165,6 +166,7 @@ def main():
                     del ds_demand
                 except Exception as e:
                     print(f"  [ERROR] Demand proximity {tile_str}: {e}")
+                    client.restart()
                     if os.path.exists(tmp_path):
                         os.remove(tmp_path)
             else:

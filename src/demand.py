@@ -91,7 +91,7 @@ def compute_demand_settlement_proximity(
 
     # Dividing by pixel area to get fraction of demand proximity
     pixel_area = determine_pixel_areas(settlement.rio.write_crs("EPSG:4326"))
-    settlement_fraction = settlement / pixel_area
+    settlement_fraction = (settlement / pixel_area).compute()
 
     # Kernel radius in pixels of buffer zone
     radius = int(radius / REFERENCE_RESOLUTION)
