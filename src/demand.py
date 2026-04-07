@@ -76,7 +76,7 @@ def compute_demand_settlement_proximity(
     ref = create_tile_template(buffer_bounds, REFERENCE_RESOLUTION)
 
     # Load and resample settlement raster
-    with rxr.open_rasterio(paths["ghsl"], chunks={"x": -1, "y": -1}).squeeze().astype(
+    with rxr.open_rasterio(paths["ghsl"], chunks=True).squeeze().astype(
         "float32"
     ) as built:
         settlement = clip_and_resample(built, ref)
