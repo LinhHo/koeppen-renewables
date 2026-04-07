@@ -109,12 +109,13 @@ def compute_demand_settlement_proximity(
     )
 
     # Log transform demand proximity to make it less skewed and comparable
-    return xr.Dataset(
-        {
-            "settlement_m2": settlement,
-            "demand_proximity_weighted_buffered": weighted_buffered,
-        },
-    )
+    return settlement, weighted_buffered.rename("demand_proximity_weighted_buffered")
+    # return xr.Dataset(
+    #     {
+    #         "settlement_m2": settlement,
+    #         "demand_proximity_weighted_buffered": weighted_buffered,
+    #     },
+    # )
 
 
 # # Temporarily put it here. Quantile normalisation seems to make clear jumps in demand potential on the map.

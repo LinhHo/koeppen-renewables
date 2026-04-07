@@ -160,7 +160,15 @@ def main():
                 tmp_path = str(demand_file) + ".tmp"
                 try:
                     print(f"\n--- Computing demand proximity for Tile: {tile_str} ---")
-                    ds_demand = compute_demand_settlement_proximity(tile, PATHS)
+                    settlement, weighted_buffered = compute_demand_settlement_proximity(
+                        tile, PATHS
+                    )
+                    ds_demand = xr.Dataset(
+                        {
+                            "settlement_m2": settlement,
+                            "demand_proximity_weighted_buffered": weighted_buffered,
+                        }
+                    )
                     ds_demand.to_netcdf(tmp_path, engine="netcdf4")
                     os.rename(tmp_path, demand_file)  # atomic on POSIX/HPC
                     del ds_demand
