@@ -1,15 +1,7 @@
 """
 Demand-related computations for the Koeppen renewables pipeline.
-
-This module provides two independent demand components:
-
-1. Climate-driven demand
-   - Heating days
-   - Cooling days
-   derived from ERA5 temperature fields
-
-2. Settlement-driven demand potential
-   - Inverse-distance weighted population / built-up intensity
+based on settlement-driven demand potential
+   - Inverse-distance weighted population / built-up intensity (fraction of pixel area)
    - Computed using a buffered tile, then cropped back to the original tile
 
 All functions operate on *tiles* and return xarray objects.
@@ -84,9 +76,9 @@ def compute_demand_settlement_proximity(
     ref = create_tile_template(buffer_bounds, REFERENCE_RESOLUTION)
 
     # Load and resample settlement raster
-    with rxr.open_rasterio(
-        paths["ghsl"], chunks={"x": 2048, "y": 2048}
-    ).squeeze().astype("float32") as built:
+    with rxr.open_rasterio(paths["ghsl"], chunks={"x": -1, "y": -1}).squeeze().astype(
+        "float32"
+    ) as built:
         settlement = clip_and_resample(built, ref)
 
     # Dividing by pixel area to get fraction of demand proximity
