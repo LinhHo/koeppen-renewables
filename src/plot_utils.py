@@ -104,19 +104,16 @@ class ClassificationSpec:
     use_storage
         If True, add a reliability character (R/U) derived from storage duration.
     use_demand
-        If True, add a demand character (h/l).
+        If True, add a demand character (h/l) derived from demand proximity.
     add_offshore
         If True, classify offshore pixels with an ``"offshore_"`` prefix.
     offshore_use_solar
         Whether the offshore label should include a solar abundance character
         (True for the *full* scheme, False for the *detailed* scheme).
-    abundance_quantiles
-        Tuple ``(low, high)`` defining the tertile thresholds when the caller
-        does not supply explicit ``threshold_cf`` values.
-    storage_quantile
-        Quantile used to threshold storage duration (long vs short).
     demand_quantile
         Quantile used to threshold the demand proxy (high vs low).
+        Demand is the only threshold still derived from a quantile; all
+        resource / storage thresholds are supplied via ``threshold_cf``.
     """
 
     name: str
@@ -126,8 +123,6 @@ class ClassificationSpec:
     use_demand: bool = False
     add_offshore: bool = False
     offshore_use_solar: bool = False
-    abundance_quantiles: tuple = (0.33, 0.66)
-    storage_quantile: float = 0.5
     demand_quantile: float = 0.5
 
 
@@ -144,8 +139,6 @@ SPEC_DETAILED = ClassificationSpec(
     use_demand=True,
     add_offshore=True,
     offshore_use_solar=False,  # offshore uses wind only
-    storage_quantile=0.5,
-    demand_quantile=0.5,
 )
 
 SPEC_FULL = ClassificationSpec(
@@ -154,8 +147,6 @@ SPEC_FULL = ClassificationSpec(
     use_demand=True,
     add_offshore=True,
     offshore_use_solar=True,
-    storage_quantile=0.5,
-    demand_quantile=0.5,
 )
 
 
@@ -167,30 +158,14 @@ def _tertile_masks(values: xr.DataArray, low: float, high: float):
     return low_m, mid_m, high_m
 
 
-def _ensure_thresholds(
-    threshold_cf: Optional[dict],
-    solar_cf: xr.DataArray,
-    wind_onshore_cf: xr.DataArray,
-    quantiles: tuple,
-) -> dict:
-    low_q, high_q = quantiles
-    if threshold_cf is None:
-        threshold_cf = {}
-    threshold_cf.setdefault(
-        "solar",
-        {
-            "low": float(solar_cf.quantile(low_q).values),
-            "high": float(solar_cf.quantile(high_q).values),
-        },
-    )
-    threshold_cf.setdefault(
-        "wind_onshore",
-        {
-            "low": float(wind_onshore_cf.quantile(low_q).values),
-            "high": float(wind_onshore_cf.quantile(high_q).values),
-        },
-    )
-    return threshold_cf
+def _require(threshold_cf: dict, key: str, subkey: str, spec_name: str) -> float:
+    """Read a required threshold value; raise a clear error if missing."""
+    try:
+        return float(threshold_cf[key][subkey])
+    except (KeyError, TypeError):
+        raise ValueError(
+            f"[{spec_name}] threshold_cf['{key}']['{subkey}'] is required but missing."
+        )
 
 
 def classify_zones(
@@ -206,26 +181,42 @@ def classify_zones(
 ) -> xr.DataArray:
     """Classify every grid cell into a zone label described by *spec*.
 
-    Label structure (characters are appended left-to-right):
+    All resource / storage thresholds must be provided via ``threshold_cf``
+    (no quantile fallbacks).  Only the demand split still uses a quantile
+    defined in ``spec.demand_quantile``.
 
-    - solar abundance (``H`` / ``M`` / ``L``)           if ``use_solar_land``
-    - wind  abundance (``H`` / ``M`` / ``L``)           if ``use_wind_land``
-    - reliability     (``R`` / ``U``)                   if ``use_storage``
-    - demand          (``h`` / ``l``)                   if ``use_demand``
+    Required ``threshold_cf`` keys
+    --------------------------------
+    - ``"solar"``         : ``{"low": float, "high": float}``   [CF]
+    - ``"wind_onshore"``  : ``{"low": float, "high": float}``   [CF]
+    - ``"wind_offshore"`` : ``{"low": float, "high": float}``   [m/s climatology]
+      (required when ``spec.add_offshore`` is True)
+    - ``"solar_offshore"``: ``{"low": float, "high": float}``   [W m⁻²]
+      (required when ``spec.add_offshore`` and ``spec.offshore_use_solar``)
+    - ``"storage"``       : ``{"land": float, "offshore": float}``  [days]
+      (required when ``spec.use_storage`` is True)
 
-    Offshore labels are prefixed with ``"offshore_"``.  When
-    ``spec.offshore_use_solar`` is False, the offshore label omits the solar
-    character.
+    Label structure (characters appended left-to-right)
+    ---------------------------------------------------
+    - solar abundance (``H`` / ``M`` / ``L``)     if ``use_solar_land``
+    - wind  abundance (``H`` / ``M`` / ``L``)     if ``use_wind_land``
+    - reliability     (``R`` / ``U``)             if ``use_storage``
+    - demand          (``h`` / ``l``)             if ``use_demand``
+
+    Offshore labels are prefixed with ``"offshore_"``.
 
     Returns
     -------
     xarray.DataArray
-        2-D DataArray of string labels (``""`` for pixels that match no group).
+        2-D DataArray of string labels (``""`` for unclassified pixels).
     """
     if spec.use_storage and ds_storage is None:
-        raise ValueError(f"spec {spec.name!r} needs ds_storage")
+        raise ValueError(f"spec {spec.name!r} requires ds_storage")
     if spec.use_demand and ds_demand is None:
-        raise ValueError(f"spec {spec.name!r} needs ds_demand")
+        raise ValueError(f"spec {spec.name!r} requires ds_demand")
+
+    if threshold_cf is None:
+        threshold_cf = {}
 
     log_fn = log.info if verbose else log.debug
 
@@ -239,45 +230,36 @@ def classify_zones(
     solar_cf = ds["solar_CF"].where(land).compute()
     onshore_cf = ds["wind_CF"].where(land).compute()
 
-    threshold_cf = _ensure_thresholds(
-        threshold_cf, solar_cf, onshore_cf, spec.abundance_quantiles
-    )
+    sol_lo = _require(threshold_cf, "solar", "low", spec.name)
+    sol_hi = _require(threshold_cf, "solar", "high", spec.name)
+    win_lo = _require(threshold_cf, "wind_onshore", "low", spec.name)
+    win_hi = _require(threshold_cf, "wind_onshore", "high", spec.name)
     log_fn(
-        f"[{spec.name}] land thresholds — solar "
-        f"({threshold_cf['solar']['low']:.2f}, {threshold_cf['solar']['high']:.2f}), "
-        f"wind ({threshold_cf['wind_onshore']['low']:.2f}, "
-        f"{threshold_cf['wind_onshore']['high']:.2f})"
+        f"[{spec.name}] land thresholds — solar ({sol_lo:.2f}/{sol_hi:.2f} CF), "
+        f"wind ({win_lo:.2f}/{win_hi:.2f} CF)"
     )
 
-    solar_low, solar_mid, solar_high = _tertile_masks(
-        solar_cf, threshold_cf["solar"]["low"], threshold_cf["solar"]["high"]
-    )
-    wind_low, wind_mid, wind_high = _tertile_masks(
-        onshore_cf,
-        threshold_cf["wind_onshore"]["low"],
-        threshold_cf["wind_onshore"]["high"],
-    )
+    solar_low, solar_mid, solar_high = _tertile_masks(solar_cf, sol_lo, sol_hi)
+    wind_low, wind_mid, wind_high = _tertile_masks(onshore_cf, win_lo, win_hi)
 
+    # Label order: wind first, solar second (then storage, then demand)
     land_axes: list[list[tuple]] = []
-    if spec.use_solar_land:
-        land_axes.append([(solar_high, "H"), (solar_mid, "M"), (solar_low, "L")])
     if spec.use_wind_land:
         land_axes.append([(wind_high, "H"), (wind_mid, "M"), (wind_low, "L")])
+    if spec.use_solar_land:
+        land_axes.append([(solar_high, "H"), (solar_mid, "M"), (solar_low, "L")])
 
     # -- land reliability (storage) ------------------------------------------
     if spec.use_storage:
         land_storage = ds_storage.where(land).compute()
-        th_land = float(land_storage.quantile(spec.storage_quantile).values)
-        threshold_cf.setdefault("storage", {})["land"] = th_land
-        log_fn(
-            f"[{spec.name}] land storage threshold (q={spec.storage_quantile}) = "
-            f"{th_land:.2f} days"
-        )
+        th_land = _require(threshold_cf, "storage", "land", spec.name)
+        log_fn(f"[{spec.name}] land storage threshold = {th_land:.1f} days")
         land_axes.append(
             [(land_storage < th_land, "R"), (land_storage >= th_land, "U")]
         )
 
-    # -- demand --------------------------------------------------------------
+    # -- demand (still quantile-based) ----------------------------------------
+    demand_high = demand_low = None
     if spec.use_demand:
         demand_thresh = float(ds_demand.quantile(spec.demand_quantile).values)
         demand_high = ds_demand >= demand_thresh
@@ -305,48 +287,30 @@ def classify_zones(
     # -- offshore ------------------------------------------------------------
     if spec.add_offshore:
         off_wind = ds["wind_climatology"].where(offshore).compute()
-        threshold_cf.setdefault(
-            "wind_offshore",
-            {
-                "low": float(off_wind.quantile(spec.abundance_quantiles[0]).values),
-                "high": float(off_wind.quantile(spec.abundance_quantiles[1]).values),
-            },
-        )
-        ow_low, ow_mid, ow_high = _tertile_masks(
-            off_wind,
-            threshold_cf["wind_offshore"]["low"],
-            threshold_cf["wind_offshore"]["high"],
-        )
+        ow_lo = _require(threshold_cf, "wind_offshore", "low", spec.name)
+        ow_hi = _require(threshold_cf, "wind_offshore", "high", spec.name)
+        log_fn(f"[{spec.name}] offshore wind threshold = {ow_lo:.1f}/{ow_hi:.1f} m/s")
+        ow_low, ow_mid, ow_high = _tertile_masks(off_wind, ow_lo, ow_hi)
 
+        # Offshore label order: wind first, solar second (if applicable)
         off_axes: list[list[tuple]] = []
-
-        if spec.offshore_use_solar:
-            off_solar = ds["solar_climatology"].where(offshore).compute()
-            threshold_cf.setdefault(
-                "solar_offshore",
-                {
-                    "low": float(
-                        off_solar.quantile(spec.abundance_quantiles[0]).values
-                    ),
-                    "high": float(
-                        off_solar.quantile(spec.abundance_quantiles[1]).values
-                    ),
-                },
-            )
-            os_low, os_mid, os_high = _tertile_masks(
-                off_solar,
-                threshold_cf["solar_offshore"]["low"],
-                threshold_cf["solar_offshore"]["high"],
-            )
-            off_axes.append([(os_high, "H"), (os_mid, "M"), (os_low, "L")])
-
         off_axes.append([(ow_high, "H"), (ow_mid, "M"), (ow_low, "L")])
+
+        # ssrd in ERA5 is provided in J/m2, convert to W/m2 by dividing by the number of seconds in hour (60*60)
+        if spec.offshore_use_solar:
+            off_solar = ds["solar_climatology"].where(offshore).compute() / (60 * 60)
+            os_lo = _require(threshold_cf, "solar_offshore", "low", spec.name)
+            os_hi = _require(threshold_cf, "solar_offshore", "high", spec.name)
+            log_fn(
+                f"[{spec.name}] offshore solar threshold = {os_lo:.0f}/{os_hi:.0f} W/m²"
+            )
+            os_low, os_mid, os_high = _tertile_masks(off_solar, os_lo, os_hi)
+            off_axes.append([(os_high, "H"), (os_mid, "M"), (os_low, "L")])
 
         if spec.use_storage:
             off_storage = ds_storage.where(offshore).compute()
-            th_off = float(off_storage.quantile(spec.storage_quantile).values)
-            threshold_cf["storage"]["offshore"] = th_off
-            log_fn(f"[{spec.name}] offshore storage threshold = {th_off:.2f} days")
+            th_off = _require(threshold_cf, "storage", "offshore", spec.name)
+            log_fn(f"[{spec.name}] offshore storage threshold = {th_off:.1f} days")
             off_axes.append([(off_storage < th_off, "R"), (off_storage >= th_off, "U")])
 
         if spec.use_demand:
@@ -390,6 +354,9 @@ def light(color):  # kept for backwards compatibility
 
 # --- abundance (2-char labels: solar + wind) -------------------------------
 
+# Convention: wind(HML) first, solar(HML) second.
+# e.g. "HL" = high wind + low solar  (Wind dominant)
+#      "LH" = low wind  + high solar  (Solar dominant)
 GROUPS_ABUNDANCE: dict = {
     "B": [
         LAND_COLORS["B"],
@@ -399,52 +366,56 @@ GROUPS_ABUNDANCE: dict = {
     "W": [
         LAND_COLORS["W"],
         "- Wind dominant",
-        ["LH", "LM", "offshore_LH", "offshore_LM"],
+        ["HL", "ML", "offshore_HL", "offshore_ML"],
     ],
-    "Ws": [LAND_COLORS["Ws"], "- Wind favourable", ["MH", "offshore_MH"]],
+    "Ws": [LAND_COLORS["Ws"], "- Wind favourable", ["HM", "offshore_HM"]],
     "S": [
         LAND_COLORS["S"],
         "- Solar dominant",
-        ["HL", "ML", "offshore_HL", "offshore_ML"],
+        ["LH", "LM", "offshore_LH", "offshore_LM"],
     ],
-    "Sw": [LAND_COLORS["Sw"], "- Solar favourable", ["HM", "offshore_HM"]],
+    "Sw": [LAND_COLORS["Sw"], "- Solar favourable", ["MH", "offshore_MH"]],
     "P": [LAND_COLORS["P"], "- Poor both", ["LL", "offshore_LL"]],
 }
 
 
-# --- detailed (offshore wind only, 5-char land labels) ---------------------
-# Land: solar(HML) + solar-reliability(RU) + wind(HML) + wind-reliability(RU) + demand(hl)
-# This matches the historical `groups_colours` dict. Offshore uses
-# `offshore_<WindAbund><Reliability><Demand>`.
+# --- detailed (offshore wind only) -----------------------------------------
+# Land label:    wind(HML) + solar(HML) + storage(RU) + demand(hl)
+#   e.g. "HLRh" = high wind, low solar, reliable, high demand  → Wind zone
+#        "LHRh" = low wind,  high solar, reliable, high demand  → Solar zone
+# Offshore label: wind(HML) + storage(RU) + demand(hl)  [no solar char]
+#   e.g. "HRh"  = high wind, reliable, high demand
 
 GROUPS_DETAILED: dict = {
     "B": ["#3cb44b", "- Both", ["HHRh", "MMRh"]],
     "B_l": [light("#3cb44b"), "", ["HHRl", "MMRl"]],
     "B_u": ["#688818", "", ["HHUh", "MMUh"]],
-    "B_ul": [
-        light("#688818"),
-        "",
-        ["HHUl", "MMUl"],
-    ],
-    "W": ["#0099FF", "- Wind", ["LHRh", "LMRh"]],
-    "W_l": [light("#0099FF"), "", ["LHRl", "LMRl"]],
-    "W_u": ["#2e86a8", "", ["LHUh", "LMUh"]],
-    "W_ul": [light("#2e86a8"), "", ["LHUl", "LMUl"]],
-    "Ws": ["#00FFEE", "- Wind solar", ["MHRh"]],
-    "Ws_l": [light("#00FFEE"), "", ["MHRl"]],
-    "Ws_u": ["#22B8AE", "", ["MHUh"]],
-    "Ws_ul": [light("#22B8AE"), "", ["MHUl"]],
-    "S": ["#ff8819", "- Solar", ["HLRh", "MLRh"]],
-    "S_l": [light("#ff8819"), "", ["HLRl", "MLRl"]],
-    "S_u": ["#b25c0c", "", ["HLUh", "MLUh"]],
-    "S_ul": [light("#b25c0c"), "", ["HLUl", "MLUl"]],
-    "Sw": ["#fff319", "- Solar wind", ["HMRh"]],
-    "Sw_l": [light("#fff319"), "", ["HMRl"]],
-    "Sw_u": ["#b2aa13", "", ["HMUh"]],
-    "Sw_ul": [light("#b2aa13"), "", ["HMUl"]],
+    "B_ul": [light("#688818"), "", ["HHUl", "MMUl"]],
+    # Wind dominant: high/mid wind + low solar
+    "W": ["#0099FF", "- Wind", ["HLRh", "MLRh"]],
+    "W_l": [light("#0099FF"), "", ["HLRl", "MLRl"]],
+    "W_u": ["#2e86a8", "", ["HLUh", "MLUh"]],
+    "W_ul": [light("#2e86a8"), "", ["HLUl", "MLUl"]],
+    # Wind favourable: high wind + medium solar
+    "Ws": ["#00FFEE", "- Wind solar", ["HMRh"]],
+    "Ws_l": [light("#00FFEE"), "", ["HMRl"]],
+    "Ws_u": ["#22B8AE", "", ["HMUh"]],
+    "Ws_ul": [light("#22B8AE"), "", ["HMUl"]],
+    # Solar dominant: low wind + high/mid solar
+    "S": ["#ff8819", "- Solar", ["LHRh", "LMRh"]],
+    "S_l": [light("#ff8819"), "", ["LHRl", "LMRl"]],
+    "S_u": ["#b25c0c", "", ["LHUh", "LMUh"]],
+    "S_ul": [light("#b25c0c"), "", ["LHUl", "LMUl"]],
+    # Solar favourable: medium wind + high solar
+    "Sw": ["#fff319", "- Solar wind", ["MHRh"]],
+    "Sw_l": [light("#fff319"), "", ["MHRl"]],
+    "Sw_u": ["#b2aa13", "", ["MHUh"]],
+    "Sw_ul": [light("#b2aa13"), "", ["MHUl"]],
     "P": ["#FF0000", "- Poor", ["LLxh"]],
     "P_l": ["#BFBFBF", "", ["LLxl"]],
-    "o_h": ["#EA6565", "", ["offshore_LRh", "offshore_LUh"]],
+    # Offshore wind — H and M share colour; H=3, M=2 in resource calc
+    # Offshore label: wind(HML) + storage(RU) + demand(hl)  [already wind-first, unchanged]
+    "o": ["#EA6565", "", ["offshore_LRh", "offshore_LUh"]],
     "o_l": ["#CECDCD", "", ["offshore_LRl", "offshore_LUl"]],
     "O": ["#4a53ff", "- Offshore", ["offshore_HRh", "offshore_MRh"]],
     "O_l": ["#a6a3fe", "", ["offshore_HRl", "offshore_MRl"]],
@@ -453,37 +424,11 @@ GROUPS_DETAILED: dict = {
 }
 
 
-# --- full (offshore uses solar + wind, 4-char land labels) -----------------
-# Land: solar(HML) + wind(HML) + reliability(RU) + demand(hl)
-# Offshore: solar(HML) + wind(HML) + reliability(RU) + demand(hl)
-
-
-def _build_full_groups() -> dict:
-    groups = {}
-
-    def add(code, base_col, label, on_suffixes, off_suffixes=None):
-        land = [c for c in on_suffixes]
-        if off_suffixes is not None:
-            land += [f"offshore_{s}" for s in off_suffixes]
-        groups[code] = [base_col, label, land]
-        groups[f"{code}_l"] = [
-            light(base_col),
-            "",
-            [
-                (
-                    p.replace("h", "l", 1)
-                    if p.endswith("h")
-                    else (p[:-2] + "l" if p[-1] == "h" else p)
-                )
-                for p in land
-            ],
-        ]
-        # We generate low-demand / variable variants explicitly below for
-        # clarity rather than programmatically — see GROUPS_FULL literal.
-
-    # The literal dict below is clearer than programmatic generation.
-    return groups  # unused
-
+# --- full (offshore uses wind + solar, 4-char labels everywhere) -----------
+# Land label:    wind(HML) + solar(HML) + storage(RU) + demand(hl)
+# Offshore label: wind(HML) + solar(HML) + storage(RU) + demand(hl)
+# e.g. "HLRh" = high wind, low solar, reliable, high demand  → Wind zone
+#      "LHRh" = low wind,  high solar, reliable, high demand  → Solar zone
 
 GROUPS_FULL: dict = {
     "B": [
@@ -506,54 +451,58 @@ GROUPS_FULL: dict = {
         "",
         ["HHUl", "MMUl", "offshore_HHUl", "offshore_MMUl"],
     ],
+    # Wind dominant: high/mid wind + low solar
     "W": [
         LAND_COLORS["W"],
         "- Wind",
-        ["LHRh", "LMRh", "offshore_LHRh", "offshore_LMRh"],
+        ["HLRh", "MLRh", "offshore_HLRh", "offshore_MLRh"],
     ],
     "W_l": [
         light(LAND_COLORS["W"]),
         "",
-        ["LHRl", "LMRl", "offshore_LHRl", "offshore_LMRl"],
+        ["HLRl", "MLRl", "offshore_HLRl", "offshore_MLRl"],
     ],
     "W_v": [
         dirty(LAND_COLORS["W"]),
         "",
-        ["LHUh", "LMUh", "offshore_LHUh", "offshore_LMUh"],
+        ["HLUh", "MLUh", "offshore_HLUh", "offshore_MLUh"],
     ],
     "W_vl": [
         light(dirty(LAND_COLORS["W"])),
         "",
-        ["LHUl", "LMUl", "offshore_LHUl", "offshore_LMUl"],
+        ["HLUl", "MLUl", "offshore_HLUl", "offshore_MLUl"],
     ],
-    "Ws": [LAND_COLORS["Ws"], "- Wind solar", ["MHRh", "offshore_MHRh"]],
-    "Ws_l": [light(LAND_COLORS["Ws"]), "", ["MHRl", "offshore_MHRl"]],
-    "Ws_v": [dirty(LAND_COLORS["Ws"]), "", ["MHUh", "offshore_MHUh"]],
-    "Ws_vl": [light(dirty(LAND_COLORS["Ws"])), "", ["MHUl", "offshore_MHUl"]],
+    # Wind favourable: high wind + medium solar
+    "Ws": [LAND_COLORS["Ws"], "- Wind solar", ["HMRh", "offshore_HMRh"]],
+    "Ws_l": [light(LAND_COLORS["Ws"]), "", ["HMRl", "offshore_HMRl"]],
+    "Ws_v": [dirty(LAND_COLORS["Ws"]), "", ["HMUh", "offshore_HMUh"]],
+    "Ws_vl": [light(dirty(LAND_COLORS["Ws"])), "", ["HMUl", "offshore_HMUl"]],
+    # Solar dominant: low wind + high/mid solar
     "S": [
         LAND_COLORS["S"],
         "- Solar",
-        ["HLRh", "MLRh", "offshore_HLRh", "offshore_MLRh"],
+        ["LHRh", "LMRh", "offshore_LHRh", "offshore_LMRh"],
     ],
     "S_l": [
         light(LAND_COLORS["S"]),
         "",
-        ["HLRl", "MLRl", "offshore_HLRl", "offshore_MLRl"],
+        ["LHRl", "LMRl", "offshore_LHRl", "offshore_LMRl"],
     ],
     "S_v": [
         dirty(LAND_COLORS["S"]),
         "",
-        ["HLUh", "MLUh", "offshore_HLUh", "offshore_MLUh"],
+        ["LHUh", "LMUh", "offshore_LHUh", "offshore_LMUh"],
     ],
     "S_vl": [
         light(dirty(LAND_COLORS["S"])),
         "",
-        ["HLUl", "MLUl", "offshore_HLUl", "offshore_MLUl"],
+        ["LHUl", "LMUl", "offshore_LHUl", "offshore_LMUl"],
     ],
-    "Sw": [LAND_COLORS["Sw"], "- Solar wind", ["HMRh", "offshore_HMRh"]],
-    "Sw_l": [light(LAND_COLORS["Sw"]), "", ["HMRl", "offshore_HMRl"]],
-    "Sw_v": [dirty(LAND_COLORS["Sw"]), "", ["HMUh", "offshore_HMUh"]],
-    "Sw_vl": [light(dirty(LAND_COLORS["Sw"])), "", ["HMUl", "offshore_HMUl"]],
+    # Solar favourable: medium wind + high solar
+    "Sw": [LAND_COLORS["Sw"], "- Solar wind", ["MHRh", "offshore_MHRh"]],
+    "Sw_l": [light(LAND_COLORS["Sw"]), "", ["MHRl", "offshore_MHRl"]],
+    "Sw_v": [dirty(LAND_COLORS["Sw"]), "", ["MHUh", "offshore_HMUh"]],
+    "Sw_vl": [light(dirty(LAND_COLORS["Sw"])), "", ["MHUl", "offshore_MHUl"]],
     "P": ["#FF0000", "- Poor", ["LLRh", "offshore_LLRh", "LLUh", "offshore_LLUh"]],
     "P_l": [LAND_COLORS["P"], "", ["LLRl", "offshore_LLRl", "LLUl", "offshore_LLUl"]],
 }
@@ -1167,15 +1116,34 @@ def plot_scatter_elevation_precipitation(
 
 
 def parse_zone_to_abundance(zone: str) -> dict:
+    """Parse a zone label into numeric wind and solar abundance (L=1, M=2, H=3).
+
+    Handles two offshore label structures:
+    - DETAILED (wind-only offshore): ``offshore_<Wind><Storage><Demand>`` →
+      wind at position 0, solar=NaN.
+    - FULL / ABUNDANCE (solar+wind offshore): ``offshore_<Solar><Wind>...`` →
+      solar at position 0, wind at position 1.
+    Land labels always have solar at position 0, wind at position 1.
+    """
     if not isinstance(zone, str) or zone == "":
         return {"wind": np.nan, "solar": np.nan}
     amap = {"L": 1, "M": 2, "H": 3}
+    is_offshore = zone.startswith("offshore_")
     clean = zone.replace("offshore_", "")
     try:
-        return {
-            "solar": amap.get(clean[0].upper(), np.nan),
-            "wind": amap.get(clean[1].upper(), np.nan),
-        }
+        if is_offshore and len(clean) >= 2 and clean[1].upper() in ("R", "U"):
+            # DETAILED offshore: wind(HML) + storage(RU) + demand(hl)
+            # → wind at position 0, no solar component
+            return {
+                "wind": amap.get(clean[0].upper(), np.nan),
+                "solar": np.nan,
+            }
+        else:
+            # Land or FULL/ABUNDANCE offshore: wind at [0], solar at [1]
+            return {
+                "wind": amap.get(clean[0].upper(), np.nan),
+                "solar": amap.get(clean[1].upper(), np.nan),
+            }
     except IndexError:
         return {"wind": np.nan, "solar": np.nan}
 
@@ -1216,15 +1184,19 @@ def convert_zones_to_resource_availability(
             wind[i, j] = cache[z]["wind"]
             solar[i, j] = cache[z]["solar"]
 
-    valid = ~np.isnan(wind) & ~np.isnan(solar)
+    # At least one of wind/solar must be present (offshore DETAILED has solar=NaN)
+    valid = ~np.isnan(wind) | ~np.isnan(solar)
     raw = np.full(zones.shape, np.nan)
     if method == "optimal_alpha":
+        # For offshore DETAILED (solar=NaN): treat missing as 0 so wind dominates
+        w = np.where(np.isnan(wind), 0.0, wind)
+        s = np.where(np.isnan(solar), 0.0, solar)
         raw[valid] = (
-            optimal_alpha[valid] * wind[valid]
-            + (1 - optimal_alpha[valid]) * solar[valid]
+            optimal_alpha[valid] * w[valid] + (1 - optimal_alpha[valid]) * s[valid]
         )
     elif method == "max_abundance":
-        raw[valid] = np.maximum(wind[valid], solar[valid])
+        # fmax ignores NaN → returns the non-NaN value for offshore (wind only)
+        raw[valid] = np.fmax(wind[valid], solar[valid])
     else:
         raise ValueError(f"unknown method {method!r}")
 
@@ -1437,6 +1409,77 @@ def prepare_cluster_map(ds, df_clusters, shapes) -> xr.DataArray:
     return prepare_metric_map(ds, df_clusters, shapes, column="cluster")
 
 
+def create_cluster_summary_table_full_names(
+    df: pd.DataFrame,
+    shapes_ref,
+    centroids: pd.DataFrame,
+    *,
+    naming_rules: Optional[dict] = None,
+    large_threshold: int = 400,
+) -> pd.DataFrame:
+    """Build a cluster summary table with full country names and descriptive labels.
+
+    Parameters
+    ----------
+    df
+        Per-country dataframe with ``iso3``, ``cluster``, ``n_pixels`` columns.
+    shapes_ref
+        Shapes GeoDataFrame with ``country_id`` and ``parent_name`` columns.
+    centroids
+        Cluster centroids dataframe (output of :func:`cluster_countries`).
+    naming_rules
+        ``{label: (column, operator, threshold)}`` — rules applied to each centroid
+        row to derive a descriptive cluster name.  Operators: ``">="`` or ``"<"``.
+        Multiple matching rules are joined with ``" / "``.
+        Example::
+
+            {
+                "high resource": ("avg_resource", ">=", 0.7),
+                "high mismatch": ("resource_demand_corr", "<", -0.3),
+            }
+    large_threshold
+        Country is "large" when its ``n_pixels`` exceeds this value.
+    """
+    name_map = dict(zip(shapes_ref["country_id"], shapes_ref["parent_name"]))
+
+    df = df.copy()
+    df["full_name"] = df["iso3"].map(name_map)
+
+    def split_countries(group):
+        large = group[group["n_pixels"] > large_threshold]["full_name"]
+        small = group[group["n_pixels"] <= large_threshold]["full_name"]
+        return pd.Series(
+            {
+                "large_countries": ", ".join(sorted(large.dropna().astype(str))),
+                "small_countries": ", ".join(sorted(small.dropna().astype(str))),
+            }
+        )
+
+    country_rows = df.groupby("cluster").apply(split_countries)
+
+    # Summary table: metrics as rows, clusters as columns
+    summary_table = centroids[["avg_resource", "avg_storage", "resource_demand_corr"]].T
+    summary_table.loc["Large countries"] = country_rows["large_countries"]
+    summary_table.loc["Small countries"] = country_rows["small_countries"]
+
+    # Generate column names from naming_rules or fall back to "Cluster N"
+    def _name_cluster(idx: int) -> str:
+        if not naming_rules:
+            return f"Cluster {idx}"
+        row = centroids.iloc[idx]
+        matched = [
+            name
+            for name, (col, op, thr) in naming_rules.items()
+            if col in row.index
+            and ((op == ">=" and row[col] >= thr) or (op == "<" and row[col] < thr))
+        ]
+        return " / ".join(matched) if matched else f"Cluster {idx}"
+
+    col_names = {i: _name_cluster(i) for i in range(len(centroids))}
+    summary_table = summary_table.rename(columns=col_names)
+    return summary_table
+
+
 def plot_combined_analysis(
     df_clustered: pd.DataFrame,
     df_centroids: pd.DataFrame,
@@ -1579,38 +1622,6 @@ def to_iso3_robust(code: str) -> Optional[str]:
         return pycountry.countries.get(alpha_2=code).alpha_3
     except Exception:
         return None
-
-
-EU28_ISO3 = [
-    "AUT",
-    "BEL",
-    "BGR",
-    "HRV",
-    "CYP",
-    "CZE",
-    "DNK",
-    "EST",
-    "FIN",
-    "FRA",
-    "DEU",
-    "GRC",
-    "HUN",
-    "IRL",
-    "ITA",
-    "LVA",
-    "LTU",
-    "LUX",
-    "MLT",
-    "NLD",
-    "POL",
-    "PRT",
-    "ROU",
-    "SVK",
-    "SVN",
-    "ESP",
-    "SWE",
-    "GBR",
-]
 
 
 # ---------------------------------------------------------------------------

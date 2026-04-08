@@ -53,7 +53,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import plot_utils as pu
 from plot_utils import (
-    EU28_ISO3,
     GROUPS_ABUNDANCE,
     GROUPS_DETAILED,
     GROUPS_FULL,
@@ -126,23 +125,35 @@ log = logging.getLogger("make_figures")
 
 
 # ---------------------------------------------------------------------------
-# Threshold constants (reproduce the notebook's "fixed_cf_thresholds")
+# Threshold constants — edit here to change the classification
 # ---------------------------------------------------------------------------
-FIXED_CF_THRESHOLDS_ABUNDANCE = {
-    "solar": {"high": 0.20, "low": 0.15},
-    "wind_onshore": {"high": 0.35, "low": 0.25},
+# Fixed capacity-factor thresholds for solar (annual-mean CF) and onshore
+# wind (annual-mean CF).  Storage threshold is in days of duration.
+#
+# NOTE: Offshore wind and solar (when applicable) always use quantile
+# thresholds (0.33 / 0.66) derived from their own climatology — those are
+# set inside classify_zones() and are NOT controlled here.
+FIXED_THRESHOLDS = {
+    "solar": {"high": 0.20, "low": 0.15},  # annual-mean CF
+    "wind_onshore": {"high": 0.35, "low": 0.25},  # annual-mean CF
+    "wind_offshore": {"low": 7.0, "high": 8.5},  # m/s wind-speed climatology
+    "solar_offshore": {"low": 150.0, "high": 225.0},  # W/m² solar climatology
+    "storage": {"land": 14, "offshore": 14},  # days of storage duration
 }
 
-FIXED_CF_THRESHOLDS_DETAILED = {
-    "solar": {"high": 0.20, "low": 0.15},
-    "wind_onshore": {"high": 0.35, "low": 0.25},
-    "storage": {"land": 14, "offshore": 14},
-}
-
-FIXED_CF_THRESHOLDS_FULL = {
-    "solar": {"high": 0.20, "low": 0.15},
-    "wind_onshore": {"high": 0.35, "low": 0.25},
-    "storage": {"land": 14, "offshore": 14},
+# ---------------------------------------------------------------------------
+# Cluster naming rules — applied to centroid values to label each cluster
+# ---------------------------------------------------------------------------
+# Each entry: label → (metric_column, operator, threshold)
+# Multiple matching labels are joined with " / ".
+# Operators: ">=" or "<".
+CLUSTER_NAMING_RULES = {
+    "high resource": ("avg_resource", ">=", 0.7),
+    "moderate resource": ("avg_resource", "<", 0.6),
+    "long storage": ("avg_storage", ">=", 0.5),
+    "short storage": ("avg_storage", "<", 0.3),
+    "high mismatch": ("resource_demand_corr", "<", -0.2),
+    "match": ("resource_demand_corr", ">=", 0.1),
 }
 
 
@@ -222,7 +233,7 @@ class DataBundle:
                 float(off_dm.mean()),
                 float(off_dm.max()),
             )
-            threshold = 14
+            threshold = FIXED_THRESHOLDS["storage"]["land"]
             land_share = (
                 float(np.nansum(land_dm >= threshold))
                 / max(1, int(land_dm.notnull().sum()))
@@ -277,16 +288,22 @@ class DataBundle:
 
     # -- derived zones ---------------------------------------------------
     @property
+    def threshold(self) -> dict:
+        """Single threshold dict shared by all three classification specs.
+
+        Each spec only reads the keys it needs (via ``_require`` in
+        ``classify_zones``); unused keys are ignored.
+        """
+        return {k: dict(v) for k, v in FIXED_THRESHOLDS.items()}
+
+    @property
     def ds_zones_abundance(self):
         if self._ds_zones_abundance is None:
             log.info("Classifying zones — ABUNDANCE (offshore uses wind + solar)")
             self._ds_zones_abundance = classify_zones(
                 self.ds_processed,
                 SPEC_ABUNDANCE,
-                threshold_cf={
-                    "solar": dict(FIXED_CF_THRESHOLDS_ABUNDANCE["solar"]),
-                    "wind_onshore": dict(FIXED_CF_THRESHOLDS_ABUNDANCE["wind_onshore"]),
-                },
+                threshold_cf=self.threshold,
                 land=self.land,
                 offshore=self.offshore,
             ).to_dataset()
@@ -303,11 +320,7 @@ class DataBundle:
                 SPEC_DETAILED,
                 ds_storage=self.ds_mean["duration_metric"],
                 ds_demand=self.normalized_demand,
-                threshold_cf={
-                    "solar": dict(FIXED_CF_THRESHOLDS_DETAILED["solar"]),
-                    "wind_onshore": dict(FIXED_CF_THRESHOLDS_DETAILED["wind_onshore"]),
-                    "storage": dict(FIXED_CF_THRESHOLDS_DETAILED["storage"]),
-                },
+                threshold_cf=self.threshold,
                 land=self.land,
                 offshore=self.offshore,
             ).to_dataset()
@@ -324,11 +337,7 @@ class DataBundle:
                 SPEC_FULL,
                 ds_storage=self.ds_mean["duration_metric"],
                 ds_demand=self.normalized_demand,
-                threshold_cf={
-                    "solar": dict(FIXED_CF_THRESHOLDS_FULL["solar"]),
-                    "wind_onshore": dict(FIXED_CF_THRESHOLDS_FULL["wind_onshore"]),
-                    "storage": dict(FIXED_CF_THRESHOLDS_FULL["storage"]),
-                },
+                threshold_cf=self.threshold,
                 land=self.land,
                 offshore=self.offshore,
             ).to_dataset()
@@ -474,11 +483,10 @@ class DataBundle:
                 "JAM",
                 "ISR",
                 "MLT",
-                "EU28",
             ]
             valid = sorted(set(valid))
             log.info(
-                "Running per-country spatial correlation for %d countries + EU28",
+                "Running per-country spatial correlation for %d countries",
                 len(valid),
             )
             self._df_corr_results = analyze_country_spatial_correlation(
@@ -486,7 +494,6 @@ class DataBundle:
                 self.shapes_ref,
                 valid,
                 method="spearman",
-                extra_groups={"EU28": EU28_ISO3},
             )
             log_df_summary(
                 self._df_corr_results,
@@ -527,9 +534,15 @@ def fig_detailed_zones_map(data: DataBundle, fmt: str) -> None:
         GROUPS_DETAILED,
         out_path=_out("fig1_renewable_zones_detailed", fmt),
         figsize=(16, 10),
-        legend_anchor=(0.5, -0.2),
+        legend_anchor=(0.5, -0.24),
         legend_ncol=7,
-        title="Renewable zones — main classification (offshore: wind only)",
+        title=(
+            f"Renewable zones — main classification (offshore: wind only)\n"
+            f"solar CF {FIXED_THRESHOLDS['solar']['low']}/{FIXED_THRESHOLDS['solar']['high']}, "
+            f"wind CF {FIXED_THRESHOLDS['wind_onshore']['low']}/{FIXED_THRESHOLDS['wind_onshore']['high']}, "
+            f"storage {FIXED_THRESHOLDS['storage']['land']} days, "
+            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s"
+        ),
     )
 
 
@@ -543,7 +556,12 @@ def fig_abundance_map(data: DataBundle, fmt: str) -> None:
         figsize=(15, 12),
         legend_anchor=(0.5, -0.15),
         legend_ncol=3,
-        title="Abundance zones (onshore CF solar 0.15/0.20, wind 0.25/0.35)",
+        title=(
+            f"Abundance zones (onshore solar CF {FIXED_THRESHOLDS['solar']['low']}/{FIXED_THRESHOLDS['solar']['high']}, "
+            f"wind CF {FIXED_THRESHOLDS['wind_onshore']['low']}/{FIXED_THRESHOLDS['wind_onshore']['high']}, "
+            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s, "
+            f"offshore solar {FIXED_THRESHOLDS['solar_offshore']['low']:.0f}/{FIXED_THRESHOLDS['solar_offshore']['high']:.0f} W/m²)"
+        ),
     )
 
 
@@ -644,12 +662,19 @@ def _build_clusters(data: DataBundle, n: int = 4):
     centroids = centroids.iloc[order].reset_index(drop=True)
 
     cluster_colors = ["#FF5454", "#7182F3", "#FFD454", "#5EC478", "#5EBCC4"][:n]
-    labels = [
-        "High mismatch / storage",
-        "Moderate / transition",
-        "Low storage / sync",
-        "High resource / offset",
-    ][:n]
+
+    # Derive labels from CLUSTER_NAMING_RULES applied to centroid values
+    def _name_cluster(idx: int) -> str:
+        row = centroids.iloc[idx]
+        matched = [
+            name
+            for name, (col, op, thr) in CLUSTER_NAMING_RULES.items()
+            if col in row.index
+            and ((op == ">=" and row[col] >= thr) or (op == "<" and row[col] < thr))
+        ]
+        return " / ".join(matched) if matched else f"Cluster {idx}"
+
+    labels = [_name_cluster(i) for i in range(n)]
     cluster_config = {i: [cluster_colors[i], labels[i]] for i in range(n)}
 
     log_df_summary(
@@ -658,6 +683,19 @@ def _build_clusters(data: DataBundle, n: int = 4):
         numeric_cols=["avg_storage", "resource_demand_corr", "avg_resource", "cluster"],
     )
     log_df_summary(centroids, "centroids")
+
+    # Save cluster summary CSV to figures/main
+    cluster_info = pu.create_cluster_summary_table_full_names(
+        df_clustered,
+        data.shapes_ref,
+        centroids,
+        naming_rules=CLUSTER_NAMING_RULES,
+        large_threshold=400,
+    )
+    csv_path = FIG_DIR / "cluster_summary.csv"
+    cluster_info.to_csv(str(csv_path))
+    log.info("Cluster summary saved: %s", csv_path)
+
     return df_clustered, centroids, cluster_config
 
 
@@ -727,37 +765,16 @@ def fig_full_zones_map(data: DataBundle, fmt: str) -> None:
         GROUPS_FULL,
         out_path=_out("figS1_renewable_zones_full", fmt),
         figsize=(16, 10),
-        legend_anchor=(0.5, -0.18),
+        legend_anchor=(0.5, -0.25),
         legend_ncol=6,
-        title="Renewable zones — full classification (offshore: wind + solar)",
-    )
-
-
-def fig_cramers_v_full_land(data: DataBundle, fmt: str) -> None:
-    """Fig S — Cramér's V panel using the FULL classification (land)."""
-    plot_stat_group_climate_cramersv(
-        ds_grouped=data.grouped_full_land,
-        df_percentage=data.df_pct_full_land,
-        groups_land=land_only_groups(GROUPS_FULL),
-        land_colors=LAND_COLORS,
-        title_suffix="Subgroups in main renewable zones (full classification)",
-        out_path=_out("figS_cramers_full_land", fmt),
-    )
-
-
-def fig_cramers_v_offshore(data: DataBundle, fmt: str) -> None:
-    """Fig S — Cramér's V panel for offshore (DETAILED)."""
-    grouped_off, df_pct_off = get_base_and_subgroup(
-        data.ds_zones_detailed.where(data.offshore),
-        GROUPS_DETAILED,
-    )
-    plot_stat_group_climate_cramersv(
-        ds_grouped=grouped_off,
-        df_percentage=df_pct_off,
-        groups_land=land_only_groups(GROUPS_DETAILED),
-        land_colors=LAND_COLORS,
-        title_suffix="Subgroups in offshore zones",
-        out_path=_out("figS_cramers_offshore", fmt),
+        title=(
+            f"Renewable zones — full classification (offshore: wind + solar)\n"
+            f"solar CF {FIXED_THRESHOLDS['solar']['low']}/{FIXED_THRESHOLDS['solar']['high']}, "
+            f"wind CF {FIXED_THRESHOLDS['wind_onshore']['low']}/{FIXED_THRESHOLDS['wind_onshore']['high']}, "
+            f"storage {FIXED_THRESHOLDS['storage']['land']} days, "
+            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s, "
+            f"offshore solar {FIXED_THRESHOLDS['solar_offshore']['low']:.0f}/{FIXED_THRESHOLDS['solar_offshore']['high']:.0f} W/m²"
+        ),
     )
 
 
@@ -829,8 +846,6 @@ FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     "fig6": fig_clusters_3d,
     # Supplementary
     "figS1_full_zones": fig_full_zones_map,
-    "figS_cramers_full": fig_cramers_v_full_land,
-    "figS_cramers_offshore": fig_cramers_v_offshore,
     "figS_resource": fig_resource_availability,
     "figS_corr_map": fig_spatial_correlation_map,
     "figS_corr_hist": fig_correlation_histogram,
