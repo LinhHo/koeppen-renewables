@@ -38,7 +38,7 @@ from src.demand import (
 from src.storage import compute_lds_for_tile, ALPHA_VALUES
 
 # from src.OLD_plots import plot_all
-from config import (
+from src.config import (
     GLOBAL_DOMAIN,
     TILE_SIZE,
     REFERENCE_RESOLUTION,
@@ -174,7 +174,7 @@ def main():
                     del ds_demand
                 except Exception as e:
                     print(f"  [ERROR] Demand proximity {tile_str}: {e}")
-                    client.restart()
+                    # client.restart()
                     if os.path.exists(tmp_path):
                         os.remove(tmp_path)
             else:

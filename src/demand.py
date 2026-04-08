@@ -21,7 +21,7 @@ from src.geo_processing import (
     determine_pixel_areas,
 )
 
-from config import (
+from src.config import (
     # ERA5_ZARR_URL,
     REFERENCE_RESOLUTION,
     DEMAND_WEIGHTING_BUFFER,
