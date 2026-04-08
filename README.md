@@ -1,6 +1,6 @@
+## Koeppen Renewable Energy Potential
 
-
-This repository produces global data for: 
+This repository produces renewable zone classification, inspired by Koeppen climate zones. An example is as below.
 
 - Wind and solar power abundance (atlases)
 - Seasonal and weather variability (ERA5)
@@ -56,8 +56,37 @@ pixi run python main.py --bounds -20 -10 10 20
 
 This repository computes by 20×20° tiles and default years in `config.py`. Note that the results can return tiles outside of the given bounds in increments of 20° from the starting lat/lon.
 To specify the tile size and years (start and end years), add options
-```bash
-pixi run python main.py --bounds -20 -10 10 20 --tile-size 5 --years 2020 2025s
 
+```bash
+pixi run python main.py --bounds -20 -10 10 20 --tile-size 5 --years 2020 2025
+
+```
+
+To run each component separately, use the card
+
+```bash
+pixi run global -- --years 2022 2023 --with-storage
+```
+
+
+Only Complementarity:
+
+```bash
+python main.py --global --with-climatology complementarity
+
+# Solar and Precipitation Climatologies:
+python main.py --bounds 0 0 10 10 --with-climatology ssrd tp
+
+# Run Everything in climatology:
+python main.py --global --with-climatology ws100 ssrd tp complementarity
+```
+
+To generate all figures, run
+
+```bash
+python src/make_figures.py                   # all figures, PDF (default)
+python src/make_figures.py --format png      # PNG instead
+python src/make_figures.py --only fig1 fig5  # just these figures
+python src/make_figures.py --continue-on-error  # don't abort on one failure
 ```
 
