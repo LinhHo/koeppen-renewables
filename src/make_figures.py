@@ -54,10 +54,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plot_utils as pu
 from plot_utils import (
     GROUPS_ABUNDANCE,
+    GROUPS_ABUNDANCE_OFFSHORE_WIND,
     GROUPS_DETAILED,
     GROUPS_FULL,
     LAND_COLORS,
     SPEC_ABUNDANCE,
+    SPEC_ABUNDANCE_OFFSHORE_WIND,
     SPEC_DETAILED,
     SPEC_FULL,
     add_country_mask,
@@ -171,6 +173,7 @@ class DataBundle:
         self._ds_mean = None
         self._normalized_demand = None
         self._ds_zones_abundance = None
+        self._ds_zones_abundance_wind = None
         self._ds_zones_detailed = None
         self._ds_zones_full = None
         self._grouped_detailed_land = None
@@ -310,6 +313,25 @@ class DataBundle:
             ).to_dataset()
             self._log_zone_counts(self._ds_zones_abundance, "ds_zones_abundance")
         return self._ds_zones_abundance
+
+    @property
+    def ds_zones_abundance_wind(self):
+        """Abundance classification with offshore wind only (no offshore solar)."""
+        if self._ds_zones_abundance_wind is None:
+            log.info(
+                "Classifying zones — ABUNDANCE_OFFSHORE_WIND (offshore uses wind only)"
+            )
+            self._ds_zones_abundance_wind = classify_zones(
+                self.ds_processed,
+                SPEC_ABUNDANCE_OFFSHORE_WIND,
+                threshold_cf=self.threshold,
+                land=self.land,
+                offshore=self.offshore,
+            ).to_dataset()
+            self._log_zone_counts(
+                self._ds_zones_abundance_wind, "ds_zones_abundance_wind"
+            )
+        return self._ds_zones_abundance_wind
 
     @property
     def ds_zones_detailed(self):
@@ -549,19 +571,18 @@ def fig_detailed_zones_map(data: DataBundle, fmt: str) -> None:
 
 # ── Fig 2 — deconstructed maps ────────────────────────────────────────────
 def fig_abundance_map(data: DataBundle, fmt: str) -> None:
-    """Fig 2a — abundance-only map."""
+    """Fig 2a — abundance-only map (offshore: wind only, GROUPS_DETAILED colours)."""
     plot_zones_map(
-        data.ds_zones_abundance,
-        GROUPS_ABUNDANCE,
+        data.ds_zones_abundance_wind,
+        GROUPS_ABUNDANCE_OFFSHORE_WIND,
         out_path=_out("fig2a_abundance_zones", fmt),
         figsize=(15, 12),
-        legend_anchor=(0.5, -0.15),
-        legend_ncol=3,
+        legend_anchor=(0.5, -0.2),
+        legend_ncol=4,
         title=(
             f"Abundance zones (onshore solar CF {FIXED_THRESHOLDS['solar']['low']}/{FIXED_THRESHOLDS['solar']['high']}, "
             f"wind CF {FIXED_THRESHOLDS['wind_onshore']['low']}/{FIXED_THRESHOLDS['wind_onshore']['high']}, "
-            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s, "
-            f"offshore solar {FIXED_THRESHOLDS['solar_offshore']['low']:.0f}/{FIXED_THRESHOLDS['solar_offshore']['high']:.0f} W/m²)"
+            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s)"
         ),
     )
 
@@ -592,18 +613,21 @@ def fig_storage_map(data: DataBundle, fmt: str) -> None:
 
 
 def fig_abundance_storage_combined(data: DataBundle, fmt: str) -> None:
-    """Fig 2 (combined) — abundance zones (a) + mean storage duration (b)."""
+    """Fig 2 (combined) — abundance zones (a) + mean storage duration (b).
+
+    Offshore in panel (a) uses wind only with GROUPS_DETAILED colours.
+    """
     plot_abundance_storage_combined(
-        ds_abundance=data.ds_zones_abundance,
-        groups_abundance=GROUPS_ABUNDANCE,
+        ds_abundance=data.ds_zones_abundance_wind,
+        groups_abundance=GROUPS_ABUNDANCE_OFFSHORE_WIND,
         storage_data=data.ds_mean["duration_metric"].where(data.land | data.offshore),
         storage_title="Mean storage duration (1995–2025)",
         abundance_title=(
             f"Abundance zones (onshore solar CF {FIXED_THRESHOLDS['solar']['low']}/{FIXED_THRESHOLDS['solar']['high']}, "
             f"wind CF {FIXED_THRESHOLDS['wind_onshore']['low']}/{FIXED_THRESHOLDS['wind_onshore']['high']}, "
-            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s, "
-            f"offshore solar {FIXED_THRESHOLDS['solar_offshore']['low']:.0f}/{FIXED_THRESHOLDS['solar_offshore']['high']:.0f} W/m²)"
+            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s)"
         ),
+        legend_ncol=4,
         out_path=_out("Fig2_abundance_storage_separate", fmt),
     )
 

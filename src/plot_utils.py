@@ -133,6 +133,14 @@ SPEC_ABUNDANCE = ClassificationSpec(
     offshore_use_solar=True,
 )
 
+# Same as SPEC_ABUNDANCE but offshore uses wind only (no solar character).
+# Pairs with GROUPS_ABUNDANCE_OFFSHORE_WIND.
+SPEC_ABUNDANCE_OFFSHORE_WIND = ClassificationSpec(
+    name="abundance_offshore_wind",
+    add_offshore=True,
+    offshore_use_solar=False,
+)
+
 SPEC_DETAILED = ClassificationSpec(
     name="detailed",
     use_storage=True,
@@ -376,6 +384,21 @@ GROUPS_ABUNDANCE: dict = {
     ],
     "Sw": [LAND_COLORS["Sw"], "- Solar favourable", ["MH", "offshore_MH"]],
     "P": [LAND_COLORS["P"], "- Poor both", ["LL", "offshore_LL"]],
+}
+
+# Abundance land colours + GROUPS_DETAILED offshore colours (wind only, no
+# storage/demand).  Offshore labels are just "offshore_H/M/L".
+GROUPS_ABUNDANCE_OFFSHORE_WIND: dict = {
+    # Land — same as GROUPS_ABUNDANCE (wind+solar 2-char labels)
+    "B": [LAND_COLORS["B"], "- Both abundance", ["HH", "MM"]],
+    "W": [LAND_COLORS["W"], "- Wind dominant", ["HL", "ML"]],
+    "Ws": [LAND_COLORS["Ws"], "- Wind favourable", ["HM"]],
+    "S": [LAND_COLORS["S"], "- Solar dominant", ["LH", "LM"]],
+    "Sw": [LAND_COLORS["Sw"], "- Solar favourable", ["MH"]],
+    "P": [LAND_COLORS["P"], "- Poor both", ["LL"]],
+    # Offshore — colours from GROUPS_DETAILED (no solar char, wind only)
+    "O": ["#4a53ff", "- Offshore high/mid wind", ["offshore_H", "offshore_M"]],
+    "o": ["#EA6565", "- Offshore low wind", ["offshore_L"]],
 }
 
 
@@ -717,7 +740,7 @@ def plot_abundance_storage_combined(
     storage_title: str = "Mean storage duration (1995–2025)",
     abundance_title: str = "Abundance zones",
     extent: Sequence[float] = (-180, 180, -60, 80),
-    legend_anchor: tuple = (0.5, -0.12),
+    legend_anchor: tuple = (0.5, -0.2),
     legend_ncol: int = 3,
     figsize: tuple = (15, 16),
     out_path: Optional[str] = None,
@@ -1653,10 +1676,11 @@ def plot_combined_analysis(
 
     # ── resource-level → marker shape ──────────────────────────────────────
     _RES_CATS = [
-        (0.33, "low (≤0.33)",       "^"),
+        (0.33, "low (≤0.33)", "^"),
         (0.67, "medium (0.33–0.67)", "o"),
-        (1.01, "high (>0.67)",       "s"),
+        (1.01, "high (>0.67)", "s"),
     ]
+
     def _res_cat(v):
         for thr, lbl, _ in _RES_CATS:
             if v <= thr:
@@ -1665,7 +1689,7 @@ def plot_combined_analysis(
 
     df_plot["Resource level"] = df_plot["avg_resource"].apply(_res_cat)
     res_marker = {lbl: mk for _, lbl, mk in _RES_CATS}
-    res_order   = [lbl for _, lbl, _ in _RES_CATS]
+    res_order = [lbl for _, lbl, _ in _RES_CATS]
 
     # ── size from n_pixels (log-scaled for readability) ────────────────────
     n_px = df_plot["n_pixels"].clip(lower=1)
@@ -1745,24 +1769,35 @@ def plot_combined_analysis(
     for _, lbl, mk in _RES_CATS:
         legend_handles.append(
             mlines.Line2D(
-                [], [],
-                marker=mk, color="w", markerfacecolor="#666666",
-                markersize=9, label=lbl, linestyle="None",
+                [],
+                [],
+                marker=mk,
+                color="w",
+                markerfacecolor="#666666",
+                markersize=9,
+                label=lbl,
+                linestyle="None",
             )
         )
 
     # Section 3: country size (representative quantiles)
     legend_handles.append(
-        mpatches.Patch(color=None, label="Country size (pixels)", fill=False, linewidth=0)
+        mpatches.Patch(
+            color=None, label="Country size (pixels)", fill=False, linewidth=0
+        )
     )
     for q, qlabel in [(0.1, "small"), (0.5, "medium"), (0.9, "large")]:
         qval = float(np.quantile(df_plot["_sz"], q))
         legend_handles.append(
             mlines.Line2D(
-                [], [],
-                marker="o", color="w", markerfacecolor="#999999",
+                [],
+                [],
+                marker="o",
+                color="w",
+                markerfacecolor="#999999",
                 markersize=np.sqrt(qval) * 0.9,
-                label=qlabel, linestyle="None",
+                label=qlabel,
+                linestyle="None",
             )
         )
 
@@ -1971,8 +2006,9 @@ def plot_country_clusters_3d(
                     marker=dict(size=1, opacity=0, color="rgba(0,0,0,0)"),
                     text=names,
                     textposition="top center",
-                    textfont=dict(size=12, color="black",
-                                  family="Arial Black, Arial, sans-serif"),
+                    textfont=dict(
+                        size=12, color="black", family="Arial Black, Arial, sans-serif"
+                    ),
                     showlegend=False,
                     hoverinfo="skip",
                 )
@@ -1994,13 +2030,21 @@ def plot_country_clusters_3d(
         height=fig_size[1],
         scene=dict(
             domain=dict(x=[0.0, 0.82], y=[0.0, 1.0]),
-            xaxis=dict(title=dict(text="Avg resource availability", font=dict(size=13)),
-                       tickfont=dict(size=11)),
-            yaxis=dict(title=dict(text="Spatial correlation<br>(resource vs demand)",
-                                  font=dict(size=13)),
-                       tickfont=dict(size=11)),
-            zaxis=dict(title=dict(text="Avg storage [norm.]", font=dict(size=13)),
-                       tickfont=dict(size=11)),
+            xaxis=dict(
+                title=dict(text="Avg resource availability", font=dict(size=13)),
+                tickfont=dict(size=11),
+            ),
+            yaxis=dict(
+                title=dict(
+                    text="Spatial correlation<br>(resource vs demand)",
+                    font=dict(size=13),
+                ),
+                tickfont=dict(size=11),
+            ),
+            zaxis=dict(
+                title=dict(text="Avg storage [norm.]", font=dict(size=13)),
+                tickfont=dict(size=11),
+            ),
             camera=dict(
                 up=dict(x=0, y=0, z=1),
                 center=dict(x=0, y=0, z=0),
@@ -2032,6 +2076,7 @@ def plot_country_clusters_3d(
         _kaleido_ok = False
         try:
             import kaleido  # noqa: F401  (existence check only)
+
             _kaleido_ok = True
         except ImportError:
             log.warning(
@@ -2050,9 +2095,7 @@ def plot_country_clusters_3d(
                 )
                 log.info("Saved 3D cluster figure: %s", out_path)
             except Exception as exc:
-                log.warning(
-                    "Static 3D export failed for %s: %s", out_path, exc
-                )
+                log.warning("Static 3D export failed for %s: %s", out_path, exc)
 
         html_path = out_path.with_suffix(".html")
         fig.write_html(str(html_path))
