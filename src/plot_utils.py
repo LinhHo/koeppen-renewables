@@ -1906,7 +1906,8 @@ def plot_country_clusters_3d(
 
     fig = go.Figure()
 
-    # One trace per cluster, so the legend shows the manuscript labels.
+    # One trace per cluster — cluster markers first, labels drawn last so
+    # they are never occluded by centroid X markers in the depth sort.
     for cid in cluster_ids:
         colour, label = cluster_map[cid]
         sub = df[df["cluster"] == cid]
@@ -1919,10 +1920,10 @@ def plot_country_clusters_3d(
                 z=sub["avg_storage"],
                 mode="markers",
                 marker=dict(
-                    size=6,
+                    size=9,
                     color=colour,
-                    opacity=0.75,
-                    line=dict(width=0.5, color="white"),
+                    opacity=0.80,
+                    line=dict(width=0.8, color="white"),
                 ),
                 name=str(label),
                 text=sub["iso3"],
@@ -1936,7 +1937,7 @@ def plot_country_clusters_3d(
             )
         )
 
-    # Centroids: one 'X' marker per cluster, in the cluster colour.
+    # Centroids: one 'X' marker per cluster, drawn before labels.
     fig.add_trace(
         go.Scatter3d(
             x=df_centroids["avg_resource"],
@@ -1945,47 +1946,61 @@ def plot_country_clusters_3d(
             mode="markers",
             marker=dict(
                 symbol="x",
-                size=9,
+                size=12,
                 color=[cluster_map[i][0] for i in range(len(df_centroids))],
-                line=dict(width=3, color="black"),
+                line=dict(width=4, color="black"),
             ),
             name="Cluster centroids",
             hoverinfo="skip",
         )
     )
 
-    # Named-country labels (mirrors Fig 5a).
+    # Named-country labels — added LAST so they render on top of all markers.
     if list_cnt_to_plot:
         to_label = df[df["iso3"].isin(list_cnt_to_plot)]
         if not to_label.empty:
+            names = to_label.get("country_name", to_label["iso3"])
             fig.add_trace(
                 go.Scatter3d(
                     x=to_label["avg_resource"],
                     y=to_label["resource_demand_corr"],
                     z=to_label["avg_storage"],
-                    mode="text",
-                    text=to_label.get("country_name", to_label["iso3"]),
+                    # markers+text: tiny invisible anchor forces correct depth
+                    # sort so the text is never hidden behind centroid X marks.
+                    mode="markers+text",
+                    marker=dict(size=1, opacity=0, color="rgba(0,0,0,0)"),
+                    text=names,
                     textposition="top center",
-                    textfont=dict(size=11, color="black"),
+                    textfont=dict(size=12, color="black",
+                                  family="Arial Black, Arial, sans-serif"),
                     showlegend=False,
                     hoverinfo="skip",
                 )
             )
 
+    # Scene occupies the left ~82 % of the canvas; legend sits tight beside it.
     fig.update_layout(
-        title=go.layout.Title(
+        title=dict(
             text=(
                 "<b>Global Renewable Strategy Clusters (3D view)</b><br>"
                 "<sup>Storage, resource–demand correlation, and resource availability</sup>"
             ),
-            x=0,
+            x=0.04,
+            y=0.96,
+            yanchor="top",
+            font=dict(size=15),
         ),
         width=fig_size[0],
         height=fig_size[1],
         scene=dict(
-            xaxis=dict(title="Avg resource availability"),
-            yaxis=dict(title="Spatial correlation (resource vs demand)"),
-            zaxis=dict(title="Avg storage requirement [normalised]"),
+            domain=dict(x=[0.0, 0.82], y=[0.0, 1.0]),
+            xaxis=dict(title=dict(text="Avg resource availability", font=dict(size=13)),
+                       tickfont=dict(size=11)),
+            yaxis=dict(title=dict(text="Spatial correlation<br>(resource vs demand)",
+                                  font=dict(size=13)),
+                       tickfont=dict(size=11)),
+            zaxis=dict(title=dict(text="Avg storage [norm.]", font=dict(size=13)),
+                       tickfont=dict(size=11)),
             camera=dict(
                 up=dict(x=0, y=0, z=1),
                 center=dict(x=0, y=0, z=0),
@@ -1994,26 +2009,51 @@ def plot_country_clusters_3d(
             aspectmode="cube",
         ),
         template="plotly_white",
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=1.02),
-        margin=dict(l=0, r=0, b=0, t=100),
+        legend=dict(
+            yanchor="middle",
+            y=0.50,
+            xanchor="left",
+            x=0.84,
+            bgcolor="rgba(255,255,255,0.7)",
+            bordercolor="lightgrey",
+            borderwidth=1,
+            font=dict(size=12),
+        ),
+        margin=dict(l=10, r=10, b=10, t=55),
     )
 
     if out_path:
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        # Static export — needs `kaleido`. We also write an HTML alongside
-        # so the interactive version is always available.
+
+        # Static export — requires kaleido.  Check availability before
+        # attempting so we emit a clear warning rather than a cryptic error,
+        # and always fall back to writing the interactive HTML.
+        _kaleido_ok = False
         try:
-            fig.write_image(
-                str(out_path), width=fig_size[0], height=fig_size[1], scale=2
-            )
-            log.info("Saved 3D cluster figure: %s", out_path)
-        except Exception as exc:
+            import kaleido  # noqa: F401  (existence check only)
+            _kaleido_ok = True
+        except ImportError:
             log.warning(
-                "Could not save static 3D figure to %s (install kaleido): %s",
+                "kaleido is not installed — static 3D figure (%s) cannot be "
+                "saved as %s.  Install kaleido (e.g. `pip install kaleido`) "
+                "to enable static export.  The interactive HTML will still be "
+                "written.",
+                out_path.suffix.lstrip(".").upper(),
                 out_path,
-                exc,
             )
+
+        if _kaleido_ok:
+            try:
+                fig.write_image(
+                    str(out_path), width=fig_size[0], height=fig_size[1], scale=2
+                )
+                log.info("Saved 3D cluster figure: %s", out_path)
+            except Exception as exc:
+                log.warning(
+                    "Static 3D export failed for %s: %s", out_path, exc
+                )
+
         html_path = out_path.with_suffix(".html")
         fig.write_html(str(html_path))
         log.info("Saved interactive 3D cluster figure: %s", html_path)
