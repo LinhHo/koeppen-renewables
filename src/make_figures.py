@@ -71,6 +71,7 @@ from plot_utils import (
     log_ds_summary,
     mask_land,
     mask_offshore,
+    plot_abundance_storage_combined,
     plot_combined_analysis,
     plot_country_clusters_3d,
     plot_map_continuous,
@@ -590,6 +591,23 @@ def fig_storage_map(data: DataBundle, fmt: str) -> None:
     )
 
 
+def fig_abundance_storage_combined(data: DataBundle, fmt: str) -> None:
+    """Fig 2 (combined) — abundance zones (a) + mean storage duration (b)."""
+    plot_abundance_storage_combined(
+        ds_abundance=data.ds_zones_abundance,
+        groups_abundance=GROUPS_ABUNDANCE,
+        storage_data=data.ds_mean["duration_metric"].where(data.land | data.offshore),
+        storage_title="Mean storage duration (1995–2025)",
+        abundance_title=(
+            f"Abundance zones (onshore solar CF {FIXED_THRESHOLDS['solar']['low']}/{FIXED_THRESHOLDS['solar']['high']}, "
+            f"wind CF {FIXED_THRESHOLDS['wind_onshore']['low']}/{FIXED_THRESHOLDS['wind_onshore']['high']}, "
+            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s, "
+            f"offshore solar {FIXED_THRESHOLDS['solar_offshore']['low']:.0f}/{FIXED_THRESHOLDS['solar_offshore']['high']:.0f} W/m²)"
+        ),
+        out_path=_out("Fig2_abundance_storage_separate", fmt),
+    )
+
+
 def fig_optimal_alpha(data: DataBundle, fmt: str) -> None:
     """Fig 2d — optimal wind share."""
     plot_map_continuous(
@@ -650,6 +668,10 @@ def fig_scatter_poor_high(data: DataBundle, fmt: str) -> None:
 def _build_clusters(data: DataBundle, n: int = 4):
     """Shared helper — cluster countries and build the label/config dict."""
     df = data.df_corr_results.copy()
+    all_metric_path = FIG_DIR / "country_all_metrics.csv"
+    df.to_csv(str(all_metric_path))
+    log.info("Country all metrics saved: %s", all_metric_path)
+
     df["avg_storage"] = (df["avg_storage"] - df["avg_storage"].min()) / (
         df["avg_storage"].max() - df["avg_storage"].min()
     )
@@ -840,6 +862,7 @@ FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     "fig2b": fig_demand_map,
     "fig2c": fig_storage_map,
     "fig2d": fig_optimal_alpha,
+    "fig2_abundance_storage": fig_abundance_storage_combined,
     "fig3": fig_cramers_v_land,
     "fig4": fig_scatter_poor_high,
     "fig5": fig_clusters_combined,

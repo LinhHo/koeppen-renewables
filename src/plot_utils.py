@@ -705,6 +705,155 @@ def plot_zones_map(
     return fig, ax
 
 
+def plot_abundance_storage_combined(
+    ds_abundance: xr.Dataset,
+    groups_abundance: dict,
+    storage_data,
+    *,
+    storage_cmap="Spectral_r",
+    storage_vmin: float = 0,
+    storage_vmax: float = 45,
+    storage_label: str = "Storage duration [days]",
+    storage_title: str = "Mean storage duration (1995–2025)",
+    abundance_title: str = "Abundance zones",
+    extent: Sequence[float] = (-180, 180, -60, 80),
+    legend_anchor: tuple = (0.5, -0.12),
+    legend_ncol: int = 3,
+    figsize: tuple = (15, 16),
+    out_path: Optional[str] = None,
+):
+    """Combined two-panel figure: (a) abundance zones map, (b) storage mean map.
+
+    Parameters
+    ----------
+    ds_abundance : xr.Dataset
+        Zones dataset for the abundance classification.
+    groups_abundance : dict
+        Colour/label/pattern groups for the abundance classification.
+    storage_data : xr.DataArray
+        Storage duration field to display in panel (b).
+    """
+    map_proj = ccrs.Robinson()
+    data_proj = ccrs.PlateCarree()
+
+    fig = plt.figure(figsize=figsize)
+    gs = GridSpec(2, 1, figure=fig, hspace=0.15)
+
+    # ── panel (a): abundance zones ──────────────────────────────────────────
+    ax_a = fig.add_subplot(gs[0], projection=map_proj)
+    ax_a.set_global()
+    ax_a.set_extent(list(extent), crs=data_proj)
+
+    zones = ds_abundance["zones"].values
+    label_to_colour: dict[str, tuple] = {}
+    legend_items: list[tuple] = []
+    for code, (colour, label, patterns) in groups_abundance.items():
+        rgb = mcolors.to_rgb(colour)
+        legend_items.append((rgb, f"{code} {label}".strip()))
+
+    unique_labels = set(np.unique(zones)) - {""}
+    matched: set = set()
+    for lbl in unique_labels:
+        for code, (colour, _lab, patterns) in groups_abundance.items():
+            if any(_pattern_matches(lbl, p) for p in patterns):
+                label_to_colour[lbl] = mcolors.to_rgb(colour)
+                matched.add(lbl)
+                break
+
+    rgb_arr = np.full((*zones.shape, 3), np.nan, dtype=float)
+    for lbl, col in label_to_colour.items():
+        rgb_arr[zones == lbl] = col
+    rgb_arr = np.flipud(rgb_arr)
+
+    ax_a.imshow(rgb_arr, origin="lower", extent=list(extent), transform=data_proj)
+    ax_a.coastlines()
+    ax_a.add_feature(cfeature.BORDERS, linewidth=0.4)
+
+    if abundance_title:
+        ax_a.set_title(abundance_title, fontsize=13)
+
+    patches = [mpatches.Patch(color=c, label=l) for c, l in legend_items]
+    ax_a.legend(
+        handles=patches,
+        loc="lower center",
+        bbox_to_anchor=legend_anchor,
+        ncol=legend_ncol,
+        frameon=False,
+        fontsize=9,
+    )
+
+    gl_a = ax_a.gridlines(
+        draw_labels=True, linewidth=0.5, color="gray", alpha=0.6, linestyle="--"
+    )
+    gl_a.top_labels = gl_a.right_labels = False
+    gl_a.xlocator = plt.FixedLocator(range(-180, 181, 30))
+    gl_a.ylocator = plt.FixedLocator(range(-90, 91, 20))
+
+    ax_a.text(
+        -0.04,
+        1.02,
+        "a",
+        transform=ax_a.transAxes,
+        fontsize=16,
+        fontweight="bold",
+        va="bottom",
+        ha="right",
+    )
+
+    # ── panel (b): storage duration ─────────────────────────────────────────
+    ax_b = fig.add_subplot(gs[1], projection=map_proj)
+    ax_b.set_extent(list(extent), crs=data_proj)
+
+    n_colors = 9
+    cmap_obj = plt.get_cmap(storage_cmap, n_colors)
+    im = storage_data.plot(
+        ax=ax_b,
+        transform=data_proj,
+        vmin=storage_vmin,
+        vmax=storage_vmax,
+        cmap=cmap_obj,
+        add_colorbar=False,
+    )
+
+    ax_b.add_feature(cfeature.COASTLINE, linewidth=0.8)
+    ax_b.add_feature(cfeature.BORDERS, linestyle=":", alpha=0.5)
+    ax_b.add_feature(cfeature.LAND, facecolor="#f0f0f0", zorder=0)
+
+    gl_b = ax_b.gridlines(draw_labels=True, alpha=0.2)
+    gl_b.top_labels = gl_b.right_labels = False
+
+    cbar = fig.colorbar(
+        im,
+        ax=ax_b,
+        orientation="horizontal",
+        pad=0.08,
+        aspect=40,
+        shrink=0.7,
+        extend="max",
+    )
+    cbar.set_label(storage_label, fontsize=11)
+
+    if storage_title:
+        ax_b.set_title(storage_title, fontsize=13)
+
+    ax_b.text(
+        -0.04,
+        1.02,
+        "b",
+        transform=ax_b.transAxes,
+        fontsize=16,
+        fontweight="bold",
+        va="bottom",
+        ha="right",
+    )
+
+    if out_path:
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        log.info("Saved: %s", out_path)
+
+    return fig, (ax_a, ax_b)
+
+
 # ---------------------------------------------------------------------------
 # 6. Base/sub-group aggregation + Köppen overlay
 # ---------------------------------------------------------------------------
@@ -1347,7 +1496,6 @@ def analyze_country_spatial_correlation(
                 ],
                 ignore_index=True,
             )
-
     return df_results
 
 
