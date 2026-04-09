@@ -398,7 +398,7 @@ GROUPS_ABUNDANCE_OFFSHORE_WIND: dict = {
     "P": [LAND_COLORS["P"], "- Poor both", ["LL"]],
     # Offshore — colours from GROUPS_DETAILED (no solar char, wind only)
     "O": ["#4a53ff", "- Offshore high/mid wind", ["offshore_H", "offshore_M"]],
-    "o": ["#EA6565", "- Offshore low wind", ["offshore_L"]],
+    "o": ["#CECDCD", "- Offshore low wind", ["offshore_L"]],
 }
 
 
