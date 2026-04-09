@@ -150,7 +150,7 @@ FIXED_THRESHOLDS = {
 # Operators: ">=" or "<".
 CLUSTER_NAMING_RULES = {
     "high resource": ("avg_resource", ">=", 0.7),
-    "moderate resource": ("avg_resource", "<", 0.6),
+    "modest resource": ("avg_resource", "<", 0.3),
     "long storage": ("avg_storage", ">=", 0.5),
     "short storage": ("avg_storage", "<", 0.3),
     "high mismatch": ("resource_demand_corr", "<", -0.2),

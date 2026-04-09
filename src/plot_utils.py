@@ -1651,35 +1651,63 @@ def plot_combined_analysis(
     sorted_ids = sorted(cluster_map.keys())
     discrete_cmap = ListedColormap([cluster_map[i][0] for i in sorted_ids])
 
-    df_plot = df_plot.rename(columns={"avg_resource": "Average resource"})
-    sns.scatterplot(
-        data=df_plot,
-        x="resource_demand_corr",
-        y="avg_storage",
-        size="Average resource",
-        hue="cluster name",
-        palette=palette,
-        sizes=(20, 600),
-        alpha=0.5,
-        edgecolor="w",
-        ax=ax_scatter,
-    )
+    # ── resource-level → marker shape ──────────────────────────────────────
+    _RES_CATS = [
+        (0.33, "low (≤0.33)",       "^"),
+        (0.67, "medium (0.33–0.67)", "o"),
+        (1.01, "high (>0.67)",       "s"),
+    ]
+    def _res_cat(v):
+        for thr, lbl, _ in _RES_CATS:
+            if v <= thr:
+                return lbl
+        return _RES_CATS[-1][1]
 
+    df_plot["Resource level"] = df_plot["avg_resource"].apply(_res_cat)
+    res_marker = {lbl: mk for _, lbl, mk in _RES_CATS}
+    res_order   = [lbl for _, lbl, _ in _RES_CATS]
+
+    # ── size from n_pixels (log-scaled for readability) ────────────────────
+    n_px = df_plot["n_pixels"].clip(lower=1)
+    log_px = np.log1p(n_px)
+    size_min, size_max = 25, 500
+    sizes_norm = (log_px - log_px.min()) / (log_px.max() - log_px.min() + 1e-9)
+    df_plot["_sz"] = size_min + sizes_norm * (size_max - size_min)
+
+    # ── scatter: one call per resource category to honour marker shape ──────
+    for _thr, cat_label, mk in _RES_CATS:
+        sub = df_plot[df_plot["Resource level"] == cat_label]
+        if sub.empty:
+            continue
+        colours = sub["cluster name"].map(palette)
+        ax_scatter.scatter(
+            sub["resource_demand_corr"],
+            sub["avg_storage"],
+            marker=mk,
+            s=sub["_sz"],
+            c=colours,
+            alpha=0.55,
+            edgecolors="w",
+            linewidths=0.5,
+            zorder=3,
+        )
+
+    # ── centroid markers ────────────────────────────────────────────────────
     for cid in sorted_ids:
         colour, _lab = cluster_map[cid]
         row = df_centroids.iloc[cid]
-        size = 100 + row["avg_resource"] * 800
         ax_scatter.scatter(
             row["resource_demand_corr"],
             row["avg_storage"],
             marker="X",
-            s=size,
+            s=220,
             color=colour,
             edgecolors="black",
             linewidth=1.2,
             zorder=5,
         )
 
+    # ── country labels ──────────────────────────────────────────────────────
     to_label = (
         df_plot[df_plot["iso3"].isin(list_cnt_to_plot)]
         if list_cnt_to_plot
@@ -1697,14 +1725,62 @@ def plot_combined_analysis(
             path_effects=[withStroke(linewidth=2, foreground="white")],
         )
 
+    # ── custom legend ───────────────────────────────────────────────────────
+    import matplotlib.lines as mlines
+
+    # Section 1: cluster colours
+    legend_handles = [
+        mpatches.Patch(color=None, label="Cluster", fill=False, linewidth=0)
+    ]
+    for cid in sorted_ids:
+        col, lab = cluster_map[cid]
+        legend_handles.append(
+            mpatches.Patch(facecolor=col, edgecolor="grey", label=lab, alpha=0.7)
+        )
+
+    # Section 2: resource level shapes
+    legend_handles.append(
+        mpatches.Patch(color=None, label="Resource level", fill=False, linewidth=0)
+    )
+    for _, lbl, mk in _RES_CATS:
+        legend_handles.append(
+            mlines.Line2D(
+                [], [],
+                marker=mk, color="w", markerfacecolor="#666666",
+                markersize=9, label=lbl, linestyle="None",
+            )
+        )
+
+    # Section 3: country size (representative quantiles)
+    legend_handles.append(
+        mpatches.Patch(color=None, label="Country size (pixels)", fill=False, linewidth=0)
+    )
+    for q, qlabel in [(0.1, "small"), (0.5, "medium"), (0.9, "large")]:
+        qval = float(np.quantile(df_plot["_sz"], q))
+        legend_handles.append(
+            mlines.Line2D(
+                [], [],
+                marker="o", color="w", markerfacecolor="#999999",
+                markersize=np.sqrt(qval) * 0.9,
+                label=qlabel, linestyle="None",
+            )
+        )
+
+    leg = ax_scatter.legend(
+        handles=legend_handles,
+        loc="upper right",
+        fontsize=8,
+        framealpha=0.25,
+        title="Legend",
+        title_fontsize=9,
+    )
+
     ax_scatter.set_title("a) Cluster Characteristics", loc="left", fontweight="bold")
     ax_scatter.axvline(0, color="grey", linestyle="--", alpha=0.3)
     ax_scatter.grid(True, alpha=0.2)
     ax_scatter.set_xlim([-0.9, 0.8])
     ax_scatter.set_xlabel("Resource-demand spatial correlation")
     ax_scatter.set_ylabel("Average storage duration [normalised]")
-    leg = ax_scatter.legend(title="Strategic Groups", loc="upper right")
-    leg.get_frame().set_alpha(0.2)
 
     ds_map.plot(
         ax=ax_map,
