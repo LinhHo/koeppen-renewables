@@ -209,6 +209,8 @@ class DataBundle:
         self._ds_zones_full = None
         self._grouped_detailed_land = None
         self._df_pct_detailed_land = None
+        self._grouped_detailed_all = None
+        self._df_pct_detailed_all = None
         self._grouped_full_land = None
         self._df_pct_full_land = None
         self._ds_res_avail = None
@@ -445,7 +447,34 @@ class DataBundle:
     @property
     def df_pct_detailed_land(self):
         _ = self.grouped_detailed_land
+        if self._df_pct_detailed_land is not None:
+            csv_path = FIG_DIR / "df_zones_detailed_LAND_percentage.csv"
+            self._df_pct_detailed_land.to_csv(str(csv_path), index=False)
+            log.info("Saved: %s", csv_path)
         return self._df_pct_detailed_land
+
+    @property
+    def grouped_detailed_all(self):
+        """Base+subgroup decomposition for all pixels (land + offshore)."""
+        if self._grouped_detailed_all is None:
+            log.info("Computing base+subgroup decomposition (DETAILED, all pixels)")
+            self._grouped_detailed_all, self._df_pct_detailed_all = (
+                get_base_and_subgroup(
+                    self.ds_zones_detailed,
+                    GROUPS_DETAILED,
+                )
+            )
+            log_df_summary(self._df_pct_detailed_all, "df_pct_detailed_all")
+        return self._grouped_detailed_all
+
+    @property
+    def df_pct_detailed_all(self):
+        _ = self.grouped_detailed_all
+        if self._df_pct_detailed_all is not None:
+            csv_path = FIG_DIR / "df_zones_detailed_ALL_percentage.csv"
+            self._df_pct_detailed_all.to_csv(str(csv_path), index=False)
+            log.info("Saved: %s", csv_path)
+        return self._df_pct_detailed_all
 
     # -- stats panels (supplementary) -----------------------------------
     @property
@@ -768,11 +797,23 @@ def fig_scatter_poor_high(data: DataBundle, fmt: str) -> None:
         "China",
         "Cyprus",
     ]
-    plot_scatter_elevation_precipitation(
+    toplot = plot_scatter_elevation_precipitation(
         data.grouped_detailed_land,
         named,
         out_path=_out("fig4_scatter_poor_high_demand", fmt),
     )
+
+    # Save top-120 'Poor both high demand' countries sorted by % of subgroup.
+    csv_path = FIG_DIR / "df_stats_poor_both_high_demand.csv"
+    (
+        toplot[["country_name", "latitude", "elevation", "precipitation",
+                "P_count", "n_grid_cells_total", "percentage"]]
+        .sort_values("percentage", ascending=False)
+        .head(120)
+        .reset_index(drop=True)
+        .to_csv(str(csv_path), float_format="%.2f", index=False)
+    )
+    log.info("Saved: %s", csv_path)
 
 
 # ── Figs 5 & 6 — clusters ─────────────────────────────────────────────────
