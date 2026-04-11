@@ -77,6 +77,7 @@ from plot_utils import (
     plot_combined_analysis,
     plot_country_clusters_3d,
     plot_map_continuous,
+    plot_offshore_shift_density,
     plot_scatter_elevation_precipitation,
     plot_stat_group_climate_cramersv,
     plot_zones_map,
@@ -84,6 +85,36 @@ from plot_utils import (
     prepare_metric_map,
     to_iso3_robust,
 )
+
+LIST_CNT_HIGHLIGHT = [
+    "USA",
+    "DEU",
+    "CHN",
+    "VIE",
+    "NLD",
+    "FRA",
+    "EGP",
+    "IND",
+    "AUS",
+    "SYR",
+    "ESP",
+    "ITA",
+    "COD",
+    "COL",
+    "PER",
+    "GNQ",
+    "MLI",
+    "IRN",
+    "PRT",
+    "GAB",
+    "BIH",
+    "FJI",
+    "UGA",
+    "CHL",
+    "BRA",
+    "RUS",
+    "NAM",
+]
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -184,6 +215,9 @@ class DataBundle:
         self._ds_corr = None
         self._shapes_ref = None
         self._df_corr_results = None
+        self._ds_corr_land = None
+        self._shapes_land = None
+        self._df_corr_land = None
 
     # -- primary inputs --------------------------------------------------
     @property
@@ -455,28 +489,82 @@ class DataBundle:
             )
         return self._ds_res_avail
 
+    # -- shared helpers --------------------------------------------------------
+    def _valid_iso3(self) -> list[str]:
+        """Canonical list of ISO-3 country codes used in all correlation runs."""
+        import regionmask as rm
+
+        countries = rm.defined_regions.natural_earth_v5_0_0.countries_110
+        iso3 = [to_iso3_robust(a) for a in countries.to_geodataframe().abbrevs]
+        valid = [x for x in iso3 if x]
+        valid += ["SWE", "BEL", "LUX", "CHE", "KHM", "LAO", "PRT",
+                  "AUT", "JAM", "ISR", "MLT"]
+        return sorted(set(valid))
+
+    def _build_corr_ds(
+        self,
+        shapes_parquet: str,
+        shape_class: str | None = None,
+        label: str = "ds_corr",
+    ):
+        """Build the resource/demand/storage dataset masked by country shapes.
+
+        Parameters
+        ----------
+        shapes_parquet : str
+            Path to the .parquet file with country shapes.
+        shape_class : str or None
+            If given, filter the shapes to rows where ``shape_class == value``
+            before rasterising (e.g. ``"land"`` to exclude offshore polygons).
+            Pass ``None`` (default) to use all rows, which is the behaviour of
+            the original ``add_country_mask`` call.
+        label : str
+            Name used in log messages.
+        """
+        import geopandas as gpd
+        import regionmask as rm
+        import yaml
+        from shapely.geometry import box as shapely_box
+
+        dir_geo = RESOURCES_DIR / "user/module_geo_boundaries/global"
+        log.info("Building %s (shapes=%s, shape_class=%s)", label, shapes_parquet, shape_class)
+
+        shapes = gpd.read_parquet(shapes_parquet)
+        if shape_class is not None:
+            shapes = shapes[shapes["shape_class"] == shape_class].copy()
+
+        with open(str(dir_geo / "global_config.yaml")) as f:
+            config = yaml.safe_load(f)
+        country_list = list(config["module_geo_boundaries"]["countries"].keys())
+        shapes = shapes[shapes["country_id"].isin(country_list)].copy()
+        shapes = shapes.reset_index(drop=True)
+        if shapes.crs != "EPSG:4326":
+            shapes = shapes.to_crs("EPSG:4326")
+        # USA mainland only
+        shapes.loc[shapes["country_id"] == "USA", "geometry"] = (
+            gpd.clip(shapes[shapes["country_id"] == "USA"],
+                     shapely_box(-130, 20, -60, 55)).geometry.values
+        )
+
+        regions = rm.from_geopandas(shapes, names="country_id", abbrevs="country_id")
+        ds = xr.Dataset({"resource": self.ds_res_avail["resource_availability"]})
+        ds = ds.sortby("longitude")
+        ds["country_maritime"] = regions.mask(ds["longitude"], ds["latitude"], wrap_lon=False)
+        ds["demand"] = self.normalized_demand
+        ds["storage"] = self.ds_mean["duration_metric"]
+        log.info("%s: shapes loaded (%d rows)", label, len(shapes))
+        log_ds_summary(ds, label, variables=["resource", "demand", "storage"])
+        return ds, shapes
+
+    # -- combined shapes (land + offshore) ------------------------------------
     @property
     def ds_corr(self):
         if self._ds_corr is None:
             dir_geo = RESOURCES_DIR / "user/module_geo_boundaries/global"
-            log.info("Building country-masked correlation dataset")
-            ds = xr.Dataset({"resource": self.ds_res_avail["resource_availability"]})
-            ds, shapes = add_country_mask(
-                ds,
-                shapes_path=str(
-                    dir_geo / "results/global/results/shapes_combined.parquet"
-                ),
-                yaml_path=str(dir_geo / "global_config.yaml"),
-            )
-            ds["demand"] = self.normalized_demand
-            ds["storage"] = self.ds_mean["duration_metric"]
-            self._ds_corr = ds
-            self._shapes_ref = shapes
-            log.info("Country shapes loaded: %d rows", len(shapes))
-            log_ds_summary(
-                self._ds_corr,
-                "ds_corr",
-                variables=["resource", "demand", "storage"],
+            self._ds_corr, self._shapes_ref = self._build_corr_ds(
+                shapes_parquet=str(dir_geo / "results/global/results/shapes_combined.parquet"),
+                shape_class=None,
+                label="ds_corr",
             )
         return self._ds_corr
 
@@ -488,55 +576,54 @@ class DataBundle:
     @property
     def df_corr_results(self):
         if self._df_corr_results is None:
-            import regionmask
-
-            countries = regionmask.defined_regions.natural_earth_v5_0_0.countries_110
-            df_countries = countries.to_geodataframe()
-            iso3 = [to_iso3_robust(a) for a in df_countries.abbrevs]
-            valid = [x for x in iso3 if x]
-            valid += [
-                "SWE",
-                "BEL",
-                "LUX",
-                "CHE",
-                "KHM",
-                "LAO",
-                "PRT",
-                "AUT",
-                "JAM",
-                "ISR",
-                "MLT",
-            ]
-            valid = sorted(set(valid))
-            log.info(
-                "Running per-country spatial correlation for %d countries",
-                len(valid),
-            )
+            valid = self._valid_iso3()
+            log.info("Running per-country spatial correlation for %d countries", len(valid))
             self._df_corr_results = analyze_country_spatial_correlation(
-                self.ds_corr,
-                self.shapes_ref,
-                valid,
-                method="spearman",
+                self.ds_corr, self.shapes_ref, valid, method="spearman",
             )
             log_df_summary(
                 self._df_corr_results,
                 "df_corr_results",
-                numeric_cols=[
-                    "resource_demand_corr",
-                    "avg_resource",
-                    "avg_demand",
-                    "avg_storage",
-                    "n_pixels",
-                ],
+                numeric_cols=["resource_demand_corr", "avg_resource",
+                              "avg_demand", "avg_storage", "n_pixels"],
             )
             pos = int((self._df_corr_results["resource_demand_corr"] > 0).sum())
             neg = int((self._df_corr_results["resource_demand_corr"] < 0).sum())
-            log.info(
-                "Country correlation sign: positive=%d, negative=%d",
-                pos,
-                neg,
-            )
+            log.info("Country correlation sign: positive=%d, negative=%d", pos, neg)
         return self._df_corr_results
+
+    # -- land-only shapes (experiment A) --------------------------------------
+    @property
+    def ds_corr_land(self):
+        """Like ds_corr but restricted to land polygons (shape_class='land')."""
+        if self._ds_corr_land is None:
+            dir_geo = RESOURCES_DIR / "user/module_geo_boundaries/global"
+            self._ds_corr_land, self._shapes_land = self._build_corr_ds(
+                shapes_parquet=str(dir_geo / "results/global/results/shapes.parquet"),
+                shape_class="land",
+                label="ds_corr_land",
+            )
+        return self._ds_corr_land
+
+    @property
+    def shapes_land(self):
+        _ = self.ds_corr_land
+        return self._shapes_land
+
+    @property
+    def df_corr_land(self):
+        """Per-country metrics using land-only mask (experiment A)."""
+        if self._df_corr_land is None:
+            valid = self._valid_iso3()
+            log.info(
+                "Running per-country spatial correlation (land only) for %d countries",
+                len(valid),
+            )
+            self._df_corr_land = analyze_country_spatial_correlation(
+                self.ds_corr_land, self.shapes_land, valid, method="spearman",
+            )
+            log_df_summary(self._df_corr_land, "df_corr_land")
+        return self._df_corr_land
 
 
 # ---------------------------------------------------------------------------
@@ -745,35 +832,6 @@ def _build_clusters(data: DataBundle, n: int = 4):
     return df_clustered, centroids, cluster_config
 
 
-LIST_CNT_HIGHLIGHT = [
-    "USA",
-    "DEU",
-    "CHN",
-    "VIE",
-    "NLD",
-    "FRA",
-    "EGP",
-    "IND",
-    "AUS",
-    "SYR",
-    "ESP",
-    "ITA",
-    "COD",
-    "COL",
-    "PER",
-    "GNQ",
-    "MLI",
-    "IRN",
-    "PRT",
-    "GAB",
-    "BIH",
-    "FJI",
-    "UGA",
-    "CHL",
-    "BRA",
-    "RUS",
-    "NAM",
-]
 
 
 def fig_clusters_combined(data: DataBundle, fmt: str) -> None:
@@ -857,6 +915,40 @@ def fig_spatial_correlation_map(data: DataBundle, fmt: str) -> None:
     )
 
 
+def fig_offshore_wind_shift(data: DataBundle, fmt: str) -> None:
+    """Fig S — KDE density of per-country metric shifts when adding offshore wind.
+
+    Three panels: Δavg_storage, Δresource_demand_corr, Δavg_resource.
+    Curves are coloured by cluster (same colours as Fig 5).
+    Per-cluster mean shifts are logged.
+    """
+    df_land     = data.df_corr_land.copy()
+    df_combined = data.df_corr_results.copy()
+
+    # Save land-only metrics.
+    land_metric_path = FIG_DIR / "country_land_only_metrics.csv"
+    df_land.to_csv(str(land_metric_path))
+    log.info("Land-only metrics saved: %s", land_metric_path)
+
+    # Normalise avg_storage using combined's global min/max (same scale as
+    # _build_clusters, which normalises df_corr_results before clustering).
+    s_min = df_combined["avg_storage"].min()
+    s_max = df_combined["avg_storage"].max()
+    for df in (df_land, df_combined):
+        df["avg_storage"] = (df["avg_storage"] - s_min) / (s_max - s_min)
+
+    # Cluster assignments (reproducible via _build_clusters).
+    df_clustered, _, cluster_config = _build_clusters(data, n=4)
+
+    plot_offshore_shift_density(
+        df_land=df_land,
+        df_combined=df_combined,
+        cluster_info=df_clustered[["iso3", "cluster"]],
+        cluster_config=cluster_config,
+        out_path=_out("figS_offshore_wind_shift", fmt),
+    )
+
+
 def fig_correlation_histogram(data: DataBundle, fmt: str) -> None:
     """Fig S — histogram of country correlations."""
     fig, ax = plt.subplots(figsize=(7, 4))
@@ -896,6 +988,7 @@ FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     "figS_resource": fig_resource_availability,
     "figS_corr_map": fig_spatial_correlation_map,
     "figS_corr_hist": fig_correlation_histogram,
+    "figS_offshore_shift": fig_offshore_wind_shift,
 }
 
 
