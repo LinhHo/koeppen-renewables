@@ -76,6 +76,7 @@ from plot_utils import (
     plot_abundance_histograms,
     plot_abundance_storage_combined,
     plot_combined_analysis,
+    plot_zones_climatology,
     plot_country_clusters_3d,
     plot_map_continuous,
     plot_offshore_shift_density,
@@ -89,33 +90,38 @@ from plot_utils import (
 )
 
 LIST_CNT_HIGHLIGHT = [
+    "CHN",  # China
+    "IRN",  # Iran
+    "PAK",  # Pakistan
+    "MAR",  # Morocco
+    "DNK",  # Denmark
     "USA",
-    "DEU",
-    "CHN",
-    "VIE",
-    "NLD",
-    "FRA",
-    "EGP",
-    "IND",
-    "AUS",
-    "SYR",
-    "ESP",
-    "ITA",
-    "COD",
-    "COL",
-    "PER",
-    "GNQ",
-    "MLI",
-    "IRN",
-    "PRT",
-    "GAB",
-    "BIH",
-    "FJI",
-    "UGA",
-    "CHL",
-    "BRA",
-    "RUS",
-    "NAM",
+    "ALG",  # Algeria
+    "MLI",  # Mali
+    "ESP",  # Spain
+    "JPN",  # Japan
+    "VNM",  # Vietnam
+    "IND",  # India
+    "IDN",  # Indonesia
+    "AUS",  # Australia
+    # "DEU",
+    # "NLD",
+    # "FRA",
+    # "EGP",
+    # "SYR",
+    # "ITA",
+    # "COD",
+    # "COL",
+    # "PER",
+    # "PRT",
+    # "GAB",
+    # "BIH",
+    # "FJI",
+    # "UGA",
+    # "CHL",
+    # "BRA",
+    # "RUS",
+    # "NAM",
 ]
 
 # ---------------------------------------------------------------------------
@@ -528,8 +534,19 @@ class DataBundle:
         countries = rm.defined_regions.natural_earth_v5_0_0.countries_110
         iso3 = [to_iso3_robust(a) for a in countries.to_geodataframe().abbrevs]
         valid = [x for x in iso3 if x]
-        valid += ["SWE", "BEL", "LUX", "CHE", "KHM", "LAO", "PRT",
-                  "AUT", "JAM", "ISR", "MLT"]
+        valid += [
+            "SWE",
+            "BEL",
+            "LUX",
+            "CHE",
+            "KHM",
+            "LAO",
+            "PRT",
+            "AUT",
+            "JAM",
+            "ISR",
+            "MLT",
+        ]
         return sorted(set(valid))
 
     def _build_corr_ds(
@@ -558,7 +575,12 @@ class DataBundle:
         from shapely.geometry import box as shapely_box
 
         dir_geo = RESOURCES_DIR / "user/module_geo_boundaries/global"
-        log.info("Building %s (shapes=%s, shape_class=%s)", label, shapes_parquet, shape_class)
+        log.info(
+            "Building %s (shapes=%s, shape_class=%s)",
+            label,
+            shapes_parquet,
+            shape_class,
+        )
 
         shapes = gpd.read_parquet(shapes_parquet)
         if shape_class is not None:
@@ -572,15 +594,16 @@ class DataBundle:
         if shapes.crs != "EPSG:4326":
             shapes = shapes.to_crs("EPSG:4326")
         # USA mainland only
-        shapes.loc[shapes["country_id"] == "USA", "geometry"] = (
-            gpd.clip(shapes[shapes["country_id"] == "USA"],
-                     shapely_box(-130, 20, -60, 55)).geometry.values
-        )
+        shapes.loc[shapes["country_id"] == "USA", "geometry"] = gpd.clip(
+            shapes[shapes["country_id"] == "USA"], shapely_box(-130, 20, -60, 55)
+        ).geometry.values
 
         regions = rm.from_geopandas(shapes, names="country_id", abbrevs="country_id")
         ds = xr.Dataset({"resource": self.ds_res_avail["resource_availability"]})
         ds = ds.sortby("longitude")
-        ds["country_maritime"] = regions.mask(ds["longitude"], ds["latitude"], wrap_lon=False)
+        ds["country_maritime"] = regions.mask(
+            ds["longitude"], ds["latitude"], wrap_lon=False
+        )
         ds["demand"] = self.normalized_demand
         ds["storage"] = self.ds_mean["duration_metric"]
         log.info("%s: shapes loaded (%d rows)", label, len(shapes))
@@ -593,7 +616,9 @@ class DataBundle:
         if self._ds_corr is None:
             dir_geo = RESOURCES_DIR / "user/module_geo_boundaries/global"
             self._ds_corr, self._shapes_ref = self._build_corr_ds(
-                shapes_parquet=str(dir_geo / "results/global/results/shapes_combined.parquet"),
+                shapes_parquet=str(
+                    dir_geo / "results/global/results/shapes_combined.parquet"
+                ),
                 shape_class=None,
                 label="ds_corr",
             )
@@ -608,15 +633,25 @@ class DataBundle:
     def df_corr_results(self):
         if self._df_corr_results is None:
             valid = self._valid_iso3()
-            log.info("Running per-country spatial correlation for %d countries", len(valid))
+            log.info(
+                "Running per-country spatial correlation for %d countries", len(valid)
+            )
             self._df_corr_results = analyze_country_spatial_correlation(
-                self.ds_corr, self.shapes_ref, valid, method="spearman",
+                self.ds_corr,
+                self.shapes_ref,
+                valid,
+                method="spearman",
             )
             log_df_summary(
                 self._df_corr_results,
                 "df_corr_results",
-                numeric_cols=["resource_demand_corr", "avg_resource",
-                              "avg_demand", "avg_storage", "n_pixels"],
+                numeric_cols=[
+                    "resource_demand_corr",
+                    "avg_resource",
+                    "avg_demand",
+                    "avg_storage",
+                    "n_pixels",
+                ],
             )
             pos = int((self._df_corr_results["resource_demand_corr"] > 0).sum())
             neg = int((self._df_corr_results["resource_demand_corr"] < 0).sum())
@@ -651,7 +686,10 @@ class DataBundle:
                 len(valid),
             )
             self._df_corr_land = analyze_country_spatial_correlation(
-                self.ds_corr_land, self.shapes_land, valid, method="spearman",
+                self.ds_corr_land,
+                self.shapes_land,
+                valid,
+                method="spearman",
             )
             log_df_summary(self._df_corr_land, "df_corr_land")
         return self._df_corr_land
@@ -808,8 +846,17 @@ def fig_scatter_poor_high(data: DataBundle, fmt: str) -> None:
     # Save top-120 'Poor both high demand' countries sorted by % of subgroup.
     csv_path = FIG_DIR / "df_stats_poor_both_high_demand.csv"
     (
-        toplot[["country_name", "latitude", "elevation", "precipitation",
-                "P_count", "n_grid_cells_total", "percentage"]]
+        toplot[
+            [
+                "country_name",
+                "latitude",
+                "elevation",
+                "precipitation",
+                "P_count",
+                "n_grid_cells_total",
+                "percentage",
+            ]
+        ]
         .sort_values("percentage", ascending=False)
         .head(120)
         .reset_index(drop=True)
@@ -873,8 +920,6 @@ def _build_clusters(data: DataBundle, n: int = 4):
     log.info("Cluster summary saved: %s", csv_path)
 
     return df_clustered, centroids, cluster_config
-
-
 
 
 def fig_clusters_combined(data: DataBundle, fmt: str) -> None:
@@ -965,7 +1010,7 @@ def fig_offshore_wind_shift(data: DataBundle, fmt: str) -> None:
     Curves are coloured by cluster (same colours as Fig 5).
     Per-cluster mean shifts are logged.
     """
-    df_land     = data.df_corr_land.copy()
+    df_land = data.df_corr_land.copy()
     df_combined = data.df_corr_results.copy()
 
     # Save land-only metrics.
@@ -1014,6 +1059,7 @@ def fig_correlation_histogram(data: DataBundle, fmt: str) -> None:
 # Registry
 # ---------------------------------------------------------------------------
 
+
 def fig_abundance_histograms(data: DataBundle, fmt: str) -> None:
     """Fig Sa — histograms of abundance variables with classification thresholds."""
     plot_abundance_histograms(
@@ -1033,6 +1079,20 @@ def fig_storage_histograms(data: DataBundle, fmt: str) -> None:
         offshore=data.offshore,
         thresholds=data.threshold,
         out_path=_out("figSb_storage_histograms", fmt),
+    )
+
+
+def fig_zones_climatology(data: DataBundle, fmt: str) -> None:
+    """Fig S — abundance zones classified from wind/solar climatology (p33/p67 thresholds)."""
+    plot_zones_climatology(
+        ds=data.ds_processed,
+        groups=GROUPS_ABUNDANCE_OFFSHORE_WIND,
+        land=data.land,
+        offshore=data.offshore,
+        out_path=_out("figS_zones_climatology", fmt),
+        figsize=(16, 10),
+        legend_anchor=(0.5, -0.2),
+        legend_ncol=4,
     )
 
 
@@ -1056,6 +1116,7 @@ FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     "figS_offshore_shift": fig_offshore_wind_shift,
     "figSa_abundance_histograms": fig_abundance_histograms,
     "figSb_storage_histograms": fig_storage_histograms,
+    "figS_zones_climatology": fig_zones_climatology,
 }
 
 

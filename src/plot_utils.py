@@ -877,6 +877,120 @@ def plot_abundance_storage_combined(
     return fig, (ax_a, ax_b)
 
 
+def plot_zones_climatology(
+    ds: xr.Dataset,
+    groups: dict,
+    *,
+    land: Optional[xr.DataArray] = None,
+    offshore: Optional[xr.DataArray] = None,
+    out_path: Optional[str] = None,
+    figsize: tuple = (16, 10),
+    title: Optional[str] = None,
+    legend_anchor: tuple = (0.5, -0.20),
+    legend_ncol: int = 4,
+    extent: Sequence[float] = (-180, 180, -60, 80),
+) -> "tuple[plt.Figure, object]":
+    """Classify and plot abundance zones using climatology variables with quantile thresholds.
+
+    Classification uses ``wind_climatology`` and ``solar_climatology`` from *ds*
+    instead of capacity-factor fields.  Land-cell thresholds (p33/p67) are
+    derived independently for each variable from the unmasked set of valid land
+    pixels; offshore thresholds are derived from offshore pixels.
+
+    Land labels  : wind(H/M/L) + solar(H/M/L)  →  2-char, e.g. ``"HL"``
+    Offshore labels: ``"offshore_H"``, ``"offshore_M"``, ``"offshore_L"``
+
+    These are compatible with ``GROUPS_ABUNDANCE_OFFSHORE_WIND``.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Must contain ``wind_climatology`` and ``solar_climatology``.
+    groups : dict
+        Colour/label/pattern dict (use ``GROUPS_ABUNDANCE_OFFSHORE_WIND``).
+    land, offshore : xr.DataArray, optional
+        Boolean masks.  Derived automatically from ``wind_climatology`` if not
+        supplied.
+    out_path : str, optional
+        File path to save the figure.
+    """
+    wind_clim = ds["wind_climatology"]
+    if land is None:
+        land = mask_land(wind_clim)
+    if offshore is None:
+        offshore = mask_offshore(wind_clim)
+
+    # ── compute quantile thresholds from masked data ────────────────────────
+    def _q(da: xr.DataArray, mask: xr.DataArray, q: float) -> float:
+        vals = da.where(mask).values.ravel()
+        return float(np.nanpercentile(vals[np.isfinite(vals)], q * 100))
+
+    # land thresholds
+    wind_lo = _q(wind_clim, land, 1 / 3)
+    wind_hi = _q(wind_clim, land, 2 / 3)
+    solar_lo = _q(ds["solar_climatology"], land, 1 / 3)
+    solar_hi = _q(ds["solar_climatology"], land, 2 / 3)
+    # offshore threshold (wind only)
+    off_lo = _q(wind_clim, offshore, 1 / 3)
+    off_hi = _q(wind_clim, offshore, 2 / 3)
+
+    log.info(
+        "Climatology thresholds — land wind: %.2f/%.2f  land solar: %.2f/%.2f  "
+        "offshore wind: %.2f/%.2f",
+        wind_lo,
+        wind_hi,
+        solar_lo,
+        solar_hi,
+        off_lo,
+        off_hi,
+    )
+
+    # ── classify ────────────────────────────────────────────────────────────
+    wind_land = wind_clim.where(land).compute()
+    solar_land = ds["solar_climatology"].where(land).compute()
+    wind_off = wind_clim.where(offshore).compute()
+
+    def _label(val, lo, hi):
+        return np.where(val >= hi, "H", np.where(val >= lo, "M", "L"))
+
+    zones = np.full(wind_land.shape, "", dtype=object)
+
+    # land: wind-first + solar-second
+    w_lbl = _label(wind_land.values, wind_lo, wind_hi)
+    s_lbl = _label(solar_land.values, solar_lo, solar_hi)
+    land_mask = land.values
+    zones[land_mask] = np.char.add(w_lbl, s_lbl)[land_mask]
+
+    # offshore: wind only
+    off_mask = offshore.values
+    o_lbl = _label(wind_off.values, off_lo, off_hi)
+    zones[off_mask] = np.char.add("offshore_", o_lbl)[off_mask]
+
+    ds_zones = xr.DataArray(
+        zones, dims=wind_land.dims, coords=wind_land.coords, name="zones"
+    ).to_dataset()
+
+    # ── derive threshold strings for a default title ─────────────────────────
+    if title is None:
+        title = (
+            f"Abundance zones — climatology (p33/p67 thresholds)\n"
+            f"land wind {wind_lo:.1f}/{wind_hi:.1f} m/s, "
+            f"land solar {solar_lo:.0f}/{solar_hi:.0f} J/m², "
+            f"offshore wind {off_lo:.1f}/{off_hi:.1f} m/s"
+        )
+
+    return plot_zones_map(
+        ds_zones,
+        groups,
+        out_path=out_path,
+        figsize=figsize,
+        title=title,
+        legend_anchor=legend_anchor,
+        legend_ncol=legend_ncol,
+        extent=extent,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 6. Base/sub-group aggregation + Köppen overlay
 # ---------------------------------------------------------------------------
@@ -1894,7 +2008,7 @@ def plot_country_clusters_3d(
     cluster_map: dict,
     *,
     list_cnt_to_plot: Optional[Sequence[str]] = None,
-    fig_size: tuple = (1000, 900),
+    fig_size: tuple = (900, 900),
     out_path: Optional[str] = None,
     camera_eye: tuple = (1.6, 1.6, 1.1),
     show: bool = False,
@@ -2054,8 +2168,8 @@ def plot_country_clusters_3d(
         ),
         template="plotly_white",
         legend=dict(
-            yanchor="middle",
-            y=0.50,
+            yanchor="top",
+            y=1,
             xanchor="left",
             x=0.6,
             bgcolor="rgba(255,255,255,0.7)",
@@ -2118,7 +2232,7 @@ def plot_offshore_shift_density(
     cluster_info: pd.DataFrame,
     cluster_config: dict,
     *,
-    figsize: tuple = (12, 5),
+    figsize: tuple = (10, 4),
     out_path: Optional[str] = None,
 ) -> "plt.Figure":
     """KDE density of per-country metric shifts (B − A) across clusters.
@@ -2235,7 +2349,7 @@ def plot_offshore_shift_density(
         ncol=4,
         loc="lower center",
         bbox_to_anchor=(0.5, -0.12),
-        fontsize=9,
+        fontsize=10,
         frameon=False,
     )
 
