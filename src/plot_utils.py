@@ -2118,7 +2118,7 @@ def plot_offshore_shift_density(
     cluster_info: pd.DataFrame,
     cluster_config: dict,
     *,
-    figsize: tuple = (15, 5),
+    figsize: tuple = (12, 5),
     out_path: Optional[str] = None,
 ) -> "plt.Figure":
     """KDE density of per-country metric shifts (B − A) across clusters.
@@ -2148,44 +2148,52 @@ def plot_offshore_shift_density(
     """
     # ── build shift dataframe ────────────────────────────────────────────────
     merged = pd.merge(
-        df_land[["iso3", "country_name",
-                 "resource_demand_corr", "avg_storage", "avg_resource"]],
-        df_combined[["iso3",
-                     "resource_demand_corr", "avg_storage", "avg_resource"]],
+        df_land[
+            [
+                "iso3",
+                "country_name",
+                "resource_demand_corr",
+                "avg_storage",
+                "avg_resource",
+            ]
+        ],
+        df_combined[["iso3", "resource_demand_corr", "avg_storage", "avg_resource"]],
         on="iso3",
         suffixes=("_a", "_b"),
     ).dropna()
 
-    merged["storage_shift"]              = merged["avg_storage_b"]          - merged["avg_storage_a"]
-    merged["resource_demand_corr_shift"] = merged["resource_demand_corr_b"] - merged["resource_demand_corr_a"]
-    merged["avg_resource_shift"]         = merged["avg_resource_b"]         - merged["avg_resource_a"]
+    merged["storage_shift"] = merged["avg_storage_b"] - merged["avg_storage_a"]
+    merged["resource_demand_corr_shift"] = (
+        merged["resource_demand_corr_b"] - merged["resource_demand_corr_a"]
+    )
+    merged["avg_resource_shift"] = merged["avg_resource_b"] - merged["avg_resource_a"]
 
     merged = merged.merge(cluster_info[["iso3", "cluster"]], on="iso3", how="left")
 
     # Map integer IDs → human-readable labels (used as hue in seaborn).
-    id_to_label  = {cid: cfg[1] for cid, cfg in cluster_config.items()}
+    id_to_label = {cid: cfg[1] for cid, cfg in cluster_config.items()}
     label_to_col = {cfg[1]: cfg[0] for cfg in cluster_config.values()}
     merged["Cluster"] = merged["cluster"].map(id_to_label)
 
     # ── log per-cluster averages ─────────────────────────────────────────────
     shifts_meta = [
-        ("storage_shift",              "Δavg_storage"),
+        ("storage_shift", "Δavg_storage"),
         ("resource_demand_corr_shift", "Δcorr"),
-        ("avg_resource_shift",         "Δavg_resource"),
+        ("avg_resource_shift", "Δavg_resource"),
     ]
     for cid in sorted(merged["cluster"].dropna().unique()):
-        sub   = merged[merged["cluster"] == cid]
+        sub = merged[merged["cluster"] == cid]
         label = id_to_label[int(cid)]
-        parts = ", ".join(
-            f"{name}={sub[col].mean():+.3f}" for col, name in shifts_meta
-        )
+        parts = ", ".join(f"{name}={sub[col].mean():+.3f}" for col, name in shifts_meta)
         log.info("Cluster %d (%s, n=%d): %s", int(cid), label, len(sub), parts)
 
     # ── plot ─────────────────────────────────────────────────────────────────
     shift_cols = [s for s, _ in shifts_meta]
-    titles     = ["Δ Avg storage [norm.]",
-                  "Δ Resource–demand correlation",
-                  "Δ Avg resource availability"]
+    titles = [
+        "Δ Avg storage [norm.]",
+        "Δ Resource–demand correlation",
+        "Δ Avg resource quality",
+    ]
 
     # Ordered cluster labels for consistent hue ordering.
     hue_order = [id_to_label[cid] for cid in sorted(cluster_config)]
@@ -2204,10 +2212,10 @@ def plot_offshore_shift_density(
             fill=False,
             alpha=0.85,
             linewidth=1.8,
-            legend=(i == 0),   # collect handles from first subplot only
+            legend=(i == 0),  # collect handles from first subplot only
         )
         axes[i].set_title(title, fontsize=12)
-        axes[i].set_xlabel("Shift value (B − A)", fontsize=10)
+        axes[i].set_xlabel("Shift value", fontsize=10)
         axes[i].set_ylabel("Density" if i == 0 else "", fontsize=10)
         axes[i].axvline(0, color="grey", linestyle="--", alpha=0.5, lw=1)
         axes[i].grid(True, alpha=0.2)
@@ -2215,215 +2223,34 @@ def plot_offshore_shift_density(
         if axes[i].get_legend():
             axes[i].get_legend().remove()
 
-    # ── single shared legend outside the rightmost panel ────────────────────
+    # ── single shared legend centred below all panels ───────────────────────
+    from matplotlib.lines import Line2D
+
     legend_handles = [
-        mpatches.Patch(color=label_to_col[lbl], label=lbl)
+        Line2D([0], [0], color=label_to_col[lbl], lw=2, label=lbl)
         for lbl in hue_order
     ]
+    fig.tight_layout()
     fig.legend(
         handles=legend_handles,
-        title="Cluster",
-        title_fontsize=10,
+        ncol=4,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.12),
         fontsize=9,
-        loc="center right",
-        bbox_to_anchor=(1.0, 0.5),
-        framealpha=0.3,
+        frameon=False,
     )
 
     fig.suptitle(
-        "Distribution of country-level metric shifts when adding offshore wind",
+        "Distribution of country-level metric shifts (when adding offshore wind minus only onshore)",
         fontsize=13,
         y=1.02,
     )
-    fig.tight_layout()
 
     if out_path:
         fig.savefig(str(out_path), dpi=300, bbox_inches="tight")
         log.info("Saved: %s", out_path)
 
     return fig
-
-    Axes
-    ----
-    * X — resource–demand spatial correlation (Spearman ρ)
-    * Y — average storage duration [normalised 0–1 using combined min/max]
-
-    Each country appears as two markers (A and B) connected by an arrow.
-    When ``cluster_info`` and ``cluster_config`` are supplied the arrows are
-    coloured by cluster; otherwise a single blue is used.
-    The title reports the mean change in each metric overall, and per-cluster
-    changes are printed to the log.
-
-    Parameters
-    ----------
-    df_land : pd.DataFrame
-        Per-country metrics with land-only shapes (experiment A).
-        Required columns: ``iso3``, ``country_name``,
-        ``resource_demand_corr``, ``avg_storage``.
-    df_combined : pd.DataFrame
-        Per-country metrics with shapes_combined (experiment B,
-        land + offshore).  ``avg_storage`` must already be normalised
-        (0–1) using the same scale as df_land.
-        Required columns: ``iso3``, ``resource_demand_corr``, ``avg_storage``.
-    cluster_info : pd.DataFrame, optional
-        DataFrame with ``iso3`` and ``cluster`` columns (integer IDs).
-    cluster_config : dict, optional
-        ``{cluster_id: [hex_colour, label]}`` — same structure as Fig 5.
-        Required when ``cluster_info`` is given.
-    color_a, color_b : str
-        Default marker colours when cluster info is not provided.
-    figsize : tuple
-        Figure size in inches.
-    out_path : str or Path, optional
-        If given, save the figure here.
-    """
-    # Merge on iso3 — keep only countries present in both experiments.
-    merged = pd.merge(
-        df_land[["iso3", "country_name", "resource_demand_corr", "avg_storage"]],
-        df_combined[["iso3", "resource_demand_corr", "avg_storage"]],
-        on="iso3",
-        suffixes=("_a", "_b"),
-    ).dropna(subset=["resource_demand_corr_a", "resource_demand_corr_b",
-                     "avg_storage_a", "avg_storage_b"])
-
-    # Attach cluster IDs if provided.
-    use_clusters = cluster_info is not None and cluster_config is not None
-    if use_clusters:
-        merged = merged.merge(
-            cluster_info[["iso3", "cluster"]], on="iso3", how="left"
-        )
-
-    avg_dcorr    = (merged["resource_demand_corr_b"] - merged["resource_demand_corr_a"]).mean()
-    avg_dstorage = (merged["avg_storage_b"] - merged["avg_storage_a"]).mean()
-
-    # Log per-cluster changes.
-    if use_clusters:
-        for cid in sorted(merged["cluster"].dropna().unique()):
-            sub = merged[merged["cluster"] == cid]
-            dc = (sub["resource_demand_corr_b"] - sub["resource_demand_corr_a"]).mean()
-            ds = (sub["avg_storage_b"] - sub["avg_storage_a"]).mean()
-            label = cluster_config[int(cid)][1]
-            log.info(
-                "Cluster %d (%s, n=%d): avg Δcorr=%+.3f  avg Δstorage=%+.3f",
-                int(cid), label, len(sub), dc, ds,
-            )
-
-    fig, ax = plt.subplots(figsize=figsize)
-
-    # ── arrows A → B, coloured by cluster ────────────────────────────────────
-    for _, row in merged.iterrows():
-        dx = row["resource_demand_corr_b"] - row["resource_demand_corr_a"]
-        dy = row["avg_storage_b"] - row["avg_storage_a"]
-        if abs(dx) < 1e-4 and abs(dy) < 1e-4:
-            continue
-        if use_clusters and not pd.isna(row.get("cluster")):
-            arrow_colour = cluster_config[int(row["cluster"])][0]
-        else:
-            arrow_colour = "#4a53ff"
-        ax.annotate(
-            "",
-            xy=(row["resource_demand_corr_b"], row["avg_storage_b"]),
-            xytext=(row["resource_demand_corr_a"], row["avg_storage_a"]),
-            arrowprops=dict(
-                arrowstyle="-|>",
-                color=arrow_colour,
-                lw=1.2,
-                mutation_scale=10,
-            ),
-            zorder=2,
-        )
-
-    # ── scatter A ────────────────────────────────────────────────────────────
-    ax.scatter(
-        merged["resource_demand_corr_a"],
-        merged["avg_storage_a"],
-        color=color_a,
-        marker="D",
-        s=50,
-        alpha=0.85,
-        edgecolors="white",
-        linewidths=0.5,
-        zorder=3,
-        label="A  land only",
-    )
-
-    # ── scatter B ────────────────────────────────────────────────────────────
-    ax.scatter(
-        merged["resource_demand_corr_b"],
-        merged["avg_storage_b"],
-        color=color_b,
-        marker="s",
-        s=50,
-        alpha=0.85,
-        edgecolors="white",
-        linewidths=0.5,
-        zorder=4,
-        label="B  land + offshore wind",
-    )
-
-    # ── country labels (drawn last, on top) ─────────────────────────────────
-    if list_cnt_to_plot:
-        to_label = merged[merged["iso3"].isin(list_cnt_to_plot)]
-        for _, row in to_label.iterrows():
-            ax.text(
-                row["resource_demand_corr_b"] + 0.012,
-                row["avg_storage_b"],
-                row["country_name"],
-                fontsize=8,
-                fontweight="bold",
-                va="center",
-                color="#333333",
-                path_effects=[withStroke(linewidth=2, foreground="white")],
-                zorder=5,
-            )
-
-    # ── cluster colour legend ─────────────────────────────────────────────────
-    if use_clusters:
-        cluster_patches = [
-            mpatches.Patch(color=cluster_config[cid][0],
-                           label=f"Cluster {cid}: {cluster_config[cid][1]}")
-            for cid in sorted(cluster_config)
-        ]
-        # Separate legend for experiment markers + cluster colours
-        marker_handles = [
-            mpatches.Patch(color=color_a, label="A  land only"),
-            mpatches.Patch(color=color_b, label="B  land + offshore wind"),
-        ]
-        leg1 = ax.legend(handles=marker_handles, loc="upper left",
-                         framealpha=0.3, fontsize=9, title="Experiment",
-                         title_fontsize=9)
-        ax.add_artist(leg1)
-        ax.legend(handles=cluster_patches, loc="lower right",
-                  framealpha=0.3, fontsize=9, title="Arrow colour",
-                  title_fontsize=9)
-    else:
-        ax.legend(loc="upper left", framealpha=0.3, fontsize=10,
-                  title="Experiment", title_fontsize=10)
-
-    # ── decoration ───────────────────────────────────────────────────────────
-    ax.axvline(0, color="grey", linestyle="--", alpha=0.4, lw=1)
-    ax.set_xlabel("Resource–demand spatial correlation (Spearman ρ)", fontsize=11)
-    ax.set_ylabel("Average storage duration [normalised]", fontsize=11)
-    ax.set_title(
-        "Effect of adding offshore wind on country-level metrics\n"
-        f"avg Δcorr = {avg_dcorr:+.3f},  avg Δstorage = {avg_dstorage:+.3f}",
-        fontsize=12,
-        pad=10,
-    )
-    ax.grid(True, alpha=0.2)
-
-    fig.tight_layout()
-
-    if out_path:
-        fig.savefig(str(out_path), dpi=300, bbox_inches="tight")
-        log.info("Saved: %s", out_path)
-
-    return fig
-
-
-# ---------------------------------------------------------------------------
-# 14. Logging helpers — summaries of datasets and dataframes
-# ---------------------------------------------------------------------------
 
 
 def log_df_summary(
