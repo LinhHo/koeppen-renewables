@@ -73,6 +73,7 @@ from plot_utils import (
     log_ds_summary,
     mask_land,
     mask_offshore,
+    plot_abundance_histograms,
     plot_abundance_storage_combined,
     plot_combined_analysis,
     plot_country_clusters_3d,
@@ -80,6 +81,7 @@ from plot_utils import (
     plot_offshore_shift_density,
     plot_scatter_elevation_precipitation,
     plot_stat_group_climate_cramersv,
+    plot_storage_histograms,
     plot_zones_map,
     prepare_cluster_map,
     prepare_metric_map,
@@ -1012,6 +1014,28 @@ def fig_correlation_histogram(data: DataBundle, fmt: str) -> None:
 # Registry
 # ---------------------------------------------------------------------------
 
+def fig_abundance_histograms(data: DataBundle, fmt: str) -> None:
+    """Fig Sa — histograms of abundance variables with classification thresholds."""
+    plot_abundance_histograms(
+        ds=data.ds_processed,
+        land=data.land,
+        offshore=data.offshore,
+        thresholds=data.threshold,
+        out_path=_out("figSa_abundance_histograms", fmt),
+    )
+
+
+def fig_storage_histograms(data: DataBundle, fmt: str) -> None:
+    """Fig Sb — histograms of storage duration with classification threshold."""
+    plot_storage_histograms(
+        storage_da=data.ds_mean["duration_metric"],
+        land=data.land,
+        offshore=data.offshore,
+        thresholds=data.threshold,
+        out_path=_out("figSb_storage_histograms", fmt),
+    )
+
+
 FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     # Main text
     "fig1": fig_detailed_zones_map,
@@ -1030,6 +1054,8 @@ FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     "figS_corr_map": fig_spatial_correlation_map,
     "figS_corr_hist": fig_correlation_histogram,
     "figS_offshore_shift": fig_offshore_wind_shift,
+    "figSa_abundance_histograms": fig_abundance_histograms,
+    "figSb_storage_histograms": fig_storage_histograms,
 }
 
 

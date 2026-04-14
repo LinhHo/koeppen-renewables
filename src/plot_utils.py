@@ -412,28 +412,28 @@ GROUPS_ABUNDANCE_OFFSHORE_WIND: dict = {
 GROUPS_DETAILED: dict = {
     "B": ["#3cb44b", "- Both", ["HHRh", "MMRh"]],
     "B_l": [light("#3cb44b"), "", ["HHRl", "MMRl"]],
-    "B_u": ["#688818", "", ["HHUh", "MMUh"]],
-    "B_ul": [light("#688818"), "", ["HHUl", "MMUl"]],
+    "B_v": ["#688818", "", ["HHUh", "MMUh"]],
+    "B_vl": [light("#688818"), "", ["HHUl", "MMUl"]],
     # Wind dominant: high/mid wind + low solar
     "W": ["#0099FF", "- Wind", ["HLRh", "MLRh"]],
     "W_l": [light("#0099FF"), "", ["HLRl", "MLRl"]],
-    "W_u": ["#2e86a8", "", ["HLUh", "MLUh"]],
-    "W_ul": [light("#2e86a8"), "", ["HLUl", "MLUl"]],
+    "W_v": ["#2e86a8", "", ["HLUh", "MLUh"]],
+    "W_vl": [light("#2e86a8"), "", ["HLUl", "MLUl"]],
     # Wind favourable: high wind + medium solar
     "Ws": ["#00FFEE", "- Wind solar", ["HMRh"]],
     "Ws_l": [light("#00FFEE"), "", ["HMRl"]],
-    "Ws_u": ["#22B8AE", "", ["HMUh"]],
-    "Ws_ul": [light("#22B8AE"), "", ["HMUl"]],
+    "Ws_v": ["#22B8AE", "", ["HMUh"]],
+    "Ws_vl": [light("#22B8AE"), "", ["HMUl"]],
     # Solar dominant: low wind + high/mid solar
     "S": ["#ff8819", "- Solar", ["LHRh", "LMRh"]],
     "S_l": [light("#ff8819"), "", ["LHRl", "LMRl"]],
-    "S_u": ["#b25c0c", "", ["LHUh", "LMUh"]],
-    "S_ul": [light("#b25c0c"), "", ["LHUl", "LMUl"]],
+    "S_v": ["#b25c0c", "", ["LHUh", "LMUh"]],
+    "S_vl": [light("#b25c0c"), "", ["LHUl", "LMUl"]],
     # Solar favourable: medium wind + high solar
     "Sw": ["#fff319", "- Solar wind", ["MHRh"]],
     "Sw_l": [light("#fff319"), "", ["MHRl"]],
-    "Sw_u": ["#b2aa13", "", ["MHUh"]],
-    "Sw_ul": [light("#b2aa13"), "", ["MHUl"]],
+    "Sw_v": ["#b2aa13", "", ["MHUh"]],
+    "Sw_vl": [light("#b2aa13"), "", ["MHUl"]],
     "P": ["#FF0000", "- Poor", ["LLxh"]],
     "P_l": ["#BFBFBF", "", ["LLxl"]],
     # Offshore wind — H and M share colour; H=3, M=2 in resource calc
@@ -442,8 +442,8 @@ GROUPS_DETAILED: dict = {
     "o_l": ["#CECDCD", "", ["offshore_LRl", "offshore_LUl"]],
     "O": ["#4a53ff", "- Offshore", ["offshore_HRh", "offshore_MRh"]],
     "O_l": ["#a6a3fe", "", ["offshore_HRl", "offshore_MRl"]],
-    "O_u": ["#8f13fb", "", ["offshore_HUh", "offshore_MUh"]],
-    "O_ul": ["#d3a1ff", "", ["offshore_HUl", "offshore_MUl"]],
+    "O_v": ["#8f13fb", "", ["offshore_HUh", "offshore_MUh"]],
+    "O_vl": ["#d3a1ff", "", ["offshore_HUl", "offshore_MUl"]],
 }
 
 
@@ -1894,7 +1894,7 @@ def plot_country_clusters_3d(
     cluster_map: dict,
     *,
     list_cnt_to_plot: Optional[Sequence[str]] = None,
-    fig_size: tuple = (1400, 900),
+    fig_size: tuple = (1000, 900),
     out_path: Optional[str] = None,
     camera_eye: tuple = (1.6, 1.6, 1.1),
     show: bool = False,
@@ -2057,7 +2057,7 @@ def plot_country_clusters_3d(
             yanchor="middle",
             y=0.50,
             xanchor="left",
-            x=0.84,
+            x=0.6,
             bgcolor="rgba(255,255,255,0.7)",
             bordercolor="lightgrey",
             borderwidth=1,
@@ -2227,8 +2227,7 @@ def plot_offshore_shift_density(
     from matplotlib.lines import Line2D
 
     legend_handles = [
-        Line2D([0], [0], color=label_to_col[lbl], lw=2, label=lbl)
-        for lbl in hue_order
+        Line2D([0], [0], color=label_to_col[lbl], lw=2, label=lbl) for lbl in hue_order
     ]
     fig.tight_layout()
     fig.legend(
@@ -2248,6 +2247,247 @@ def plot_offshore_shift_density(
 
     if out_path:
         fig.savefig(str(out_path), dpi=300, bbox_inches="tight")
+        log.info("Saved: %s", out_path)
+
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 15. Threshold-distribution histograms
+# ---------------------------------------------------------------------------
+
+
+def _draw_threshold_panel(
+    ax,
+    values: np.ndarray,
+    *,
+    bins: int = 60,
+    xlabel: str = "",
+    title: str = "",
+    color: str = "steelblue",
+    thresh_low: Optional[float] = None,
+    thresh_high: Optional[float] = None,
+) -> None:
+    """Single histogram panel with statistical and fixed-threshold vertical lines.
+
+    Dashed black  : mean
+    Dashed blue   : p33 and p67
+    Solid red     : fixed low threshold (if given)
+    Solid darkred : fixed high threshold (if given)
+    """
+    valid = values[np.isfinite(values)]
+    if valid.size == 0:
+        ax.set_title(title)
+        ax.set_xlabel(xlabel)
+        return
+
+    ax.hist(valid, bins=bins, color=color, alpha=0.65, edgecolor="none", density=True)
+
+    mean_val = float(np.mean(valid))
+    p33 = float(np.percentile(valid, 33))
+    p67 = float(np.percentile(valid, 67))
+
+    ax.axvline(
+        mean_val, color="black", linestyle="--", lw=1.6, label=f"Mean = {mean_val:.3g}"
+    )
+    ax.axvline(p33, color="royalblue", linestyle="--", lw=1.3, label=f"p33 = {p33:.3g}")
+    ax.axvline(p67, color="royalblue", linestyle="--", lw=1.3, label=f"p67 = {p67:.3g}")
+
+    if thresh_low is not None:
+        ax.axvline(
+            thresh_low,
+            color="red",
+            linestyle="-",
+            lw=1.8,
+            label=f"Low = {thresh_low:.3g}",
+        )
+    if thresh_high is not None:
+        ax.axvline(
+            thresh_high,
+            color="darkred",
+            linestyle="-",
+            lw=1.8,
+            label=f"High = {thresh_high:.3g}",
+        )
+
+    ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_ylabel("Density", fontsize=10)
+    ax.set_title(title, fontsize=11)
+    ax.legend(fontsize=8, framealpha=0.35)
+    ax.grid(True, alpha=0.2)
+
+
+def plot_abundance_histograms(
+    ds: xr.Dataset,
+    land: xr.DataArray,
+    offshore: xr.DataArray,
+    thresholds: dict,
+    *,
+    bins: int = 60,
+    figsize: tuple = (10, 3.5),
+    out_path: Optional[str] = None,
+) -> "plt.Figure":
+    """Three-panel histogram of abundance variable distributions (a).
+
+    Panels: onshore wind CF | solar CF (onshore) | offshore wind climatology.
+    Dashed lines: mean (black), p33/p67 (blue).
+    Solid lines: fixed low (red) and high (darkred) classification thresholds.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Must contain ``wind_CF``, ``solar_CF``, ``wind_climatology``.
+    land, offshore : xr.DataArray
+        Boolean masks on the same grid as *ds*.
+    thresholds : dict
+        Same structure as ``FIXED_THRESHOLDS`` — needs keys
+        ``"wind_onshore"``, ``"solar"``, ``"wind_offshore"``
+        each with ``"low"`` and ``"high"`` sub-keys.
+    """
+    wind_cf = ds["wind_CF"].where(land).values.ravel()
+    solar_cf = ds["solar_CF"].where(land).values.ravel()
+    off_wind = ds["wind_climatology"].where(offshore).values.ravel()
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+
+    _draw_threshold_panel(
+        axes[0],
+        wind_cf,
+        bins=bins,
+        xlabel="Capacity Factor",
+        title="Onshore Wind CF",
+        color="#0099FF",
+        thresh_low=thresholds["wind_onshore"]["low"],
+        thresh_high=thresholds["wind_onshore"]["high"],
+    )
+    _draw_threshold_panel(
+        axes[1],
+        solar_cf,
+        bins=bins,
+        xlabel="Capacity Factor",
+        title="Solar CF (onshore)",
+        color="#ff8819",
+        thresh_low=thresholds["solar"]["low"],
+        thresh_high=thresholds["solar"]["high"],
+    )
+    _draw_threshold_panel(
+        axes[2],
+        off_wind,
+        bins=bins,
+        xlabel="Wind Speed [m/s]",
+        title="Offshore Wind Climatology",
+        color="#4a53ff",
+        thresh_low=thresholds["wind_offshore"]["low"],
+        thresh_high=thresholds["wind_offshore"]["high"],
+    )
+
+    for ax, label in zip(axes, ["a", "b", "c"]):
+        ax.text(
+            -0.08,
+            1.04,
+            label,
+            transform=ax.transAxes,
+            fontsize=12,
+            fontweight="bold",
+            va="top",
+        )
+
+    fig.suptitle(
+        "Distribution of abundance variables with classification thresholds",
+        fontsize=12,
+        y=1.02,
+    )
+    fig.tight_layout()
+
+    if out_path:
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        log.info("Saved: %s", out_path)
+
+    return fig
+
+
+def plot_storage_histograms(
+    storage_da: xr.DataArray,
+    land: xr.DataArray,
+    offshore: xr.DataArray,
+    thresholds: dict,
+    *,
+    bins: int = 60,
+    figsize: tuple = (10, 3.5),
+    out_path: Optional[str] = None,
+) -> "plt.Figure":
+    """Three-panel histogram of storage duration distributions (b).
+
+    Panels: land storage | offshore storage | combined (land + offshore).
+    Dashed lines: mean (black), p33/p67 (blue).
+    Solid red line: fixed classification threshold.
+
+    Parameters
+    ----------
+    storage_da : xr.DataArray
+        Storage duration in days (e.g. ``ds_mean["duration_metric"]``).
+    land, offshore : xr.DataArray
+        Boolean masks on the same grid as *storage_da*.
+    thresholds : dict
+        Needs key ``"storage"`` with ``"land"`` and ``"offshore"`` sub-keys.
+    """
+    land_vals = storage_da.where(land).values.ravel()
+    off_vals = storage_da.where(offshore).values.ravel()
+    comb_vals = storage_da.where(land | offshore).values.ravel()
+
+    th_land = float(thresholds["storage"]["land"])
+    th_off = float(thresholds["storage"]["offshore"])
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+
+    _draw_threshold_panel(
+        axes[0],
+        land_vals,
+        bins=bins,
+        xlabel="Storage Duration [days]",
+        title="Land Storage Duration",
+        color="#3cb44b",
+        thresh_low=th_land,
+    )
+    _draw_threshold_panel(
+        axes[1],
+        off_vals,
+        bins=bins,
+        xlabel="Storage Duration [days]",
+        title="Offshore Storage Duration",
+        color="#4a53ff",
+        thresh_low=th_off,
+    )
+    _draw_threshold_panel(
+        axes[2],
+        comb_vals,
+        bins=bins,
+        xlabel="Storage Duration [days]",
+        title="Combined Storage Duration",
+        color="#7c5cbf",
+        thresh_low=th_land,
+    )
+
+    for ax, label in zip(axes, ["a", "b", "c"]):
+        ax.text(
+            -0.08,
+            1.04,
+            label,
+            transform=ax.transAxes,
+            fontsize=12,
+            fontweight="bold",
+            va="top",
+        )
+
+    fig.suptitle(
+        "Distribution of storage duration with classification threshold",
+        fontsize=12,
+        y=1.02,
+    )
+    fig.tight_layout()
+
+    if out_path:
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
         log.info("Saved: %s", out_path)
 
     return fig
