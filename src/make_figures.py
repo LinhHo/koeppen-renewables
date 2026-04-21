@@ -878,26 +878,34 @@ def _build_clusters(data: DataBundle, n: int = 4):
     )
     df_clustered, centroids = cluster_countries(df, n_clusters=n)
 
-    # Sort clusters left-to-right by correlation axis for reproducibility
+    # Step 1 — sort by correlation so positions 0..n-1 run left-to-right on
+    # the scatter axis (most-negative corr first).
     order = centroids["resource_demand_corr"].argsort().values
     remap = {old: new for new, old in enumerate(order)}
     df_clustered["cluster"] = df_clustered["cluster"].map(remap)
     centroids = centroids.iloc[order].reset_index(drop=True)
 
-    cluster_colors = ["#FF5454", "#7182F3", "#FFD454", "#5EC478", "#5EBCC4"][:n]
+    # Step 2 — re-assign corr-sorted positions to fixed Roman-numeral IDs so
+    # that sorted(cluster_config) == [0,1,2,3] == [I, II, III, IV] in the
+    # legend.  Mapping (valid for n=4):
+    #   corr pos 0  most-negative, long storage          → Cluster III  (ID 2)
+    #   corr pos 1  high resource, short storage         → Cluster I    (ID 0)
+    #   corr pos 2  short storage, moderate resource     → Cluster II   (ID 1)
+    #   corr pos 3  most-positive, low resource / match  → Cluster IV   (ID 3)
+    _pos_to_id = {0: 2, 1: 0, 2: 1, 3: 3}
+    df_clustered["cluster"] = df_clustered["cluster"].map(_pos_to_id)
+    # Reorder centroid rows so that iloc[id] == that cluster's centroid.
+    # Desired row order by centroid: [I=pos1, II=pos2, III=pos0, IV=pos3]
+    centroids = centroids.iloc[[1, 2, 0, 3]].reset_index(drop=True)
 
-    # Derive labels from CLUSTER_NAMING_RULES applied to centroid values
-    def _name_cluster(idx: int) -> str:
-        row = centroids.iloc[idx]
-        matched = [
-            name
-            for name, (col, op, thr) in CLUSTER_NAMING_RULES.items()
-            if col in row.index
-            and ((op == ">=" and row[col] >= thr) or (op == "<" and row[col] < thr))
-        ]
-        return " / ".join(matched) if matched else f"Cluster {idx}"
-
-    labels = [_name_cluster(i) for i in range(n)]
+    # Fixed colours and labels indexed by cluster ID [0=I, 1=II, 2=III, 3=IV]
+    cluster_colors = ["#5EC478", "#7182F3", "#FFD454", "#FF5454"]
+    labels = [
+        "Cluster I — high resource / short storage / high mismatch",
+        "Cluster II — short storage / moderate resource",
+        "Cluster III — long storage / high mismatch",
+        "Cluster IV — low resource / match",
+    ]
     cluster_config = {i: [cluster_colors[i], labels[i]] for i in range(n)}
 
     log_df_summary(
