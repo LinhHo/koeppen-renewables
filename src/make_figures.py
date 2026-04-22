@@ -92,7 +92,7 @@ from plot_utils import (
 LIST_CNT_HIGHLIGHT = [
     "CHN",  # China
     "IRN",  # Iran
-    "PAK",  # Pakistan
+    # "PAK",  # Pakistan
     "MAR",  # Morocco
     "DNK",  # Denmark
     "USA",
@@ -103,13 +103,14 @@ LIST_CNT_HIGHLIGHT = [
     "VNM",  # Vietnam
     "IND",  # India
     "IDN",  # Indonesia
-    "AUS",  # Australia
+    "GRC",  # Greece
+    # "AUS",  # Australia
     # "DEU",
     # "NLD",
     # "FRA",
     # "EGP",
     # "SYR",
-    # "ITA",
+    "ITA",  # Italy
     # "COD",
     # "COL",
     # "PER",
