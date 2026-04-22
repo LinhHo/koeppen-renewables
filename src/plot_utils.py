@@ -1287,7 +1287,153 @@ def plot_stat_group_climate_cramersv(
 
 
 # ---------------------------------------------------------------------------
-# 8. Scatter: poor + high demand countries
+# 8. Zones-by-cluster bar chart
+# ---------------------------------------------------------------------------
+
+# Display order for base groups in the by-cluster bar chart.
+# Land groups first (B → P), offshore groups last.
+ZONE_ORDER_CLUSTER = ["B", "W", "Ws", "S", "Sw", "P", "O", "o"]
+
+
+def plot_zones_by_cluster_from_grid(
+    ds_zones: xr.Dataset,
+    cluster_grid: xr.DataArray,
+    cluster_config: dict,
+    groups: dict,
+    *,
+    figsize: tuple = (10, 8),
+    out_path: Optional[str] = None,
+) -> "plt.Figure":
+    """2×2 bar plots of renewable-zone composition per cluster.
+
+    Each of the four panels shows what share of that cluster's grid cells falls
+    into each base renewable-zone group (land + offshore), normalised to 100%
+    within the cluster.  Colours match *groups*.
+
+    Parameters
+    ----------
+    ds_zones : xr.Dataset
+        Zones dataset (must contain ``"zones"`` variable on the same grid as
+        *cluster_grid*).
+    cluster_grid : xr.DataArray
+        Per-cell cluster ID (float, NaN for unassigned) — output of
+        ``prepare_cluster_map``.
+    cluster_config : dict
+        ``{cluster_id: [hex_colour, label]}`` — same as Fig 5.
+    groups : dict
+        Colour/label/pattern groups (e.g. ``GROUPS_DETAILED``).
+    """
+    # ── 1. zone label → base group ───────────────────────────────────────────
+    label_to_base: dict[str, str] = {}
+    for code, (_col, _lab, patterns) in groups.items():
+        base = code.split("_")[0]
+        for pat in patterns:
+            for expanded in _expand_wildcards(pat):
+                label_to_base[expanded] = base
+
+    # ── 2. flat arrays aligned on the grid ──────────────────────────────────
+    zones_arr = ds_zones["zones"].values.ravel()  # str labels
+    cluster_arr = cluster_grid.values.ravel()  # float / NaN
+
+    base_arr = np.array([label_to_base.get(z, None) for z in zones_arr], dtype=object)
+
+    # ── 3. figure / axes ────────────────────────────────────────────────────
+    sorted_ids = sorted(cluster_config.keys())
+    nrows, ncols = 2, 2
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, sharey=True)
+    axes_flat = axes.flatten()
+
+    # colour map: base group → colour (use first matching entry in groups)
+    base_colour: dict[str, str] = {}
+    for code, (col, _lab, _pats) in groups.items():
+        base = code.split("_")[0]
+        if base not in base_colour:
+            base_colour[base] = col
+
+    # display order: land groups then offshore
+    all_bases = list(
+        dict.fromkeys([g.split("_")[0] for g in groups])  # preserves insertion order
+    )
+    display_order = [b for b in ZONE_ORDER_CLUSTER if b in all_bases] + [
+        b for b in all_bases if b not in ZONE_ORDER_CLUSTER
+    ]
+
+    panel_labels = ["a", "b", "c", "d"]
+
+    for ax_idx, cid in enumerate(sorted_ids):
+        ax = axes_flat[ax_idx]
+        cluster_colour, cluster_label = cluster_config[cid]
+
+        mask = np.isfinite(cluster_arr) & (cluster_arr == cid)
+        bases_in_cluster = base_arr[mask]
+        total = np.sum(mask)
+
+        if total == 0:
+            ax.set_visible(False)
+            continue
+
+        # count and normalise
+        pct = {}
+        for b in display_order:
+            pct[b] = float(np.sum(bases_in_cluster == b)) / total * 100
+
+        x_labels = [b for b in display_order if pct.get(b, 0) > 0]
+        x_vals = [pct[b] for b in x_labels]
+        colours = [base_colour.get(b, "#CCCCCC") for b in x_labels]
+
+        bars = ax.bar(x_labels, x_vals, color=colours, edgecolor="none", width=0.6)
+
+        # cluster-colour spine + title
+        for spine in ax.spines.values():
+            spine.set_edgecolor(cluster_colour)
+            spine.set_linewidth(2.5)
+
+        ax.set_title(cluster_label, loc="left", fontsize=11, fontweight="bold")
+        ax.set_ylabel("% of cluster grid cells")
+        ax.set_xlabel("")
+        ax.tick_params(axis="x", rotation=0, labelsize=11)
+        ax.grid(axis="y", alpha=0.25)
+        ax.set_ylim(0, max(x_vals) * 1.18)
+
+        # value labels on bars
+        for bar, val in zip(bars, x_vals):
+            if val >= 1.0:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.4,
+                    f"{val:.1f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=11,
+                )
+
+        # panel letter
+        ax.text(
+            -0.08,
+            1.04,
+            panel_labels[ax_idx],
+            transform=ax.transAxes,
+            fontsize=12,
+            fontweight="bold",
+            va="top",
+        )
+
+    fig.suptitle(
+        "Renewable zone composition by cluster",
+        fontsize=13,
+        y=1.01,
+    )
+    fig.tight_layout()
+
+    if out_path:
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        log.info("Saved: %s", out_path)
+
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 8b. Scatter: poor + high demand countries
 # ---------------------------------------------------------------------------
 
 
@@ -1878,7 +2024,7 @@ def plot_combined_analysis(
 
     # Section 2: resource level shapes
     legend_handles.append(
-        mpatches.Patch(color=None, label="Resource level", fill=False, linewidth=0)
+        mpatches.Patch(color=None, label="Resource quality", fill=False, linewidth=0)
     )
     for _, lbl, mk in _RES_CATS:
         legend_handles.append(

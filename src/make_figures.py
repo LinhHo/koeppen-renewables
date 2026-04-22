@@ -76,6 +76,7 @@ from plot_utils import (
     plot_abundance_histograms,
     plot_abundance_storage_combined,
     plot_combined_analysis,
+    plot_zones_by_cluster_from_grid,
     plot_zones_climatology,
     plot_country_clusters_3d,
     plot_map_continuous,
@@ -959,6 +960,19 @@ def fig_clusters_3d(data: DataBundle, fmt: str) -> None:
 
 
 # ── Supplementary figures ─────────────────────────────────────────────────
+def fig_zones_by_cluster(data: DataBundle, fmt: str) -> None:
+    """Fig Sup — 2×2 bar plots of renewable-zone composition per cluster (I–IV)."""
+    df_clustered, centroids, cluster_config = _build_clusters(data, n=4)
+    cluster_grid = prepare_cluster_map(data.ds_corr, df_clustered, data.shapes_ref)
+    plot_zones_by_cluster_from_grid(
+        ds_zones=data.ds_zones_detailed,
+        cluster_grid=cluster_grid,
+        cluster_config=cluster_config,
+        groups=GROUPS_DETAILED,
+        out_path=_out("Sup_zones_by_clusters", fmt),
+    )
+
+
 def fig_full_zones_map(data: DataBundle, fmt: str) -> None:
     """Fig S1 — full-classification zone map (offshore uses wind + solar)."""
     plot_zones_map(
@@ -1126,6 +1140,7 @@ FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     "figSa_abundance_histograms": fig_abundance_histograms,
     "figSb_storage_histograms": fig_storage_histograms,
     "figS_zones_climatology": fig_zones_climatology,
+    "Sup_zones_by_clusters": fig_zones_by_cluster,
 }
 
 
