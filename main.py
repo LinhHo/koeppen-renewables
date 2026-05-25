@@ -35,7 +35,7 @@ from src.climatology import get_variable_climatology, get_complementarity_index
 from src.demand import (
     compute_demand_settlement_proximity,
 )  # , run_demand_potential_for_tile
-from src.storage import compute_lds_for_tile, ALPHA_VALUES
+from src.storage import compute_lds_for_tile
 
 # from src.OLD_plots import plot_all
 from src.config import (
@@ -138,7 +138,8 @@ def main():
                         f"\n--- Computing long-duration storage for Tile: {tile_str} ---"
                     )
                     ds_lds = compute_lds_for_tile(
-                        tile, start_year, end_year, ALPHA_VALUES
+                        tile, start_year, end_year,
+                        clim_dir=output_dir / "climatology",
                     )
                     ds_lds.to_netcdf(tmp_path, engine="netcdf4")
                     os.rename(tmp_path, storage_file)  # atomic on POSIX/HPC
