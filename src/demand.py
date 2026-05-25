@@ -100,11 +100,11 @@ def compute_demand_settlement_proximity(
     weights[mask] = 1.0 / dist[mask]
     weights /= weights.sum()  # comparable scale across radius sizes
 
-    # Convolution (Dask-compatible)
+    # convolve2d requires the full 2D array; materialise first.
+    # After clip_and_resample the tile is small (≤96×96 at 0.25°) so this is safe.
     weighted_buffered = xr.apply_ufunc(
         lambda x: convolve2d(x, weights, mode="same", boundary="symm"),
-        settlement_fraction,
-        dask="parallelized",
+        settlement_fraction.compute(),
         output_dtypes=[settlement_fraction.dtype],
     )
 
