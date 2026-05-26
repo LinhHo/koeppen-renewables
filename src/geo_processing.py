@@ -96,6 +96,50 @@ def load_era5_variable(url, var, bounds, start_year, end_year, daily_sum=False):
         return None
 
 
+def load_era5_daily_land(url, var, bounds, start_year, end_year):
+    """
+    Load an ERA5-Land variable within a bounding box and time range.
+
+    ERA5-Land data is already at daily resolution — no aggregation is applied.
+    Coordinates are normalised from 0–360 to −180–180 and sorted.
+
+    Parameters
+    ----------
+    url : str
+        ERA5-Land zarr URL (ERA5_LAND_ZARR_URL from config).
+    var : str
+        Variable name in the zarr store (e.g. 't2m', 'asn').
+    bounds : tuple
+        (minx, miny, maxx, maxy) in degrees.
+    start_year, end_year : int
+        Inclusive year range.
+
+    Returns
+    -------
+    xr.DataArray
+        Daily values, dims (valid_time, latitude, longitude).
+
+    Raises
+    ------
+    KeyError
+        If *var* is not present in the ERA5-Land store.
+    ValueError
+        If the selection yields no data.
+    """
+    ds = open_era5_zarr(url)
+    if var not in ds:
+        raise KeyError(f"Variable {var!r} not found in ERA5-Land store. Available: {list(ds.data_vars)}")
+
+    selector = convert_coordinate_ERA5(bounds)
+    ds = ds.sel(valid_time=slice(f"{start_year}-01-01", f"{end_year}-12-31"))
+    da = ds[var].sel(**selector)
+
+    if da.size == 0:
+        raise ValueError(f"ERA5-Land selection for {var!r} in {bounds} {start_year}-{end_year} returned empty array.")
+
+    return da.assign_coords(longitude=((da.longitude + 180) % 360) - 180).sortby("longitude")
+
+
 """
 clip, resample
 """

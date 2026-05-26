@@ -27,7 +27,7 @@ import gc
 REPO_ROOT = Path(__file__).parent
 sys.path.extend([str(REPO_ROOT), str(REPO_ROOT / "src")])
 
-from src.abundance_atlas import resample_atlas
+from src.abundance_atlas import resample_atlas, fill_solar_cf_gap
 from src.geo_processing import generate_tiles
 from src.climatology import get_variable_climatology, get_complementarity_index
 
@@ -77,7 +77,7 @@ def parse_args():
     parser.add_argument(
         "--with-climatology",
         nargs="+",
-        choices=["ws100", "ssrd", "tp", "complementarity"],
+        choices=["ws100", "ssrd", "tp", "complementarity", "t2m", "asn"],
         help="List of climatologies or indices to compute",
     )
 
@@ -122,6 +122,33 @@ def main():
                 ds_abundance = resample_atlas(
                     tile, PATHS, resolution=REFERENCE_RESOLUTION
                 )
+
+                # Fill solar_CF NaN (above ~60°N atlas coverage) using ERA5 climatology
+                ssrd_files = sorted(
+                    (output_dir / "climatology/ssrd").glob(f"ssrd_{tile_str}_*.nc")
+                )
+                t2m_files = sorted(
+                    (output_dir / "climatology/t2m").glob(f"t2m_{tile_str}_*.nc")
+                )
+                if ssrd_files and t2m_files:
+                    print("  -> Filling solar_CF NaN with ERA5 regression...")
+                    ssrd_clim = xr.open_mfdataset(ssrd_files, engine="netcdf4")[
+                        "ssrd_climatology"
+                    ]
+                    t2m_clim = xr.open_mfdataset(t2m_files, engine="netcdf4")[
+                        "t2m_climatology"
+                    ]
+                    ds_abundance = fill_solar_cf_gap(ds_abundance, ssrd_clim, t2m_clim)
+                    ds_abundance.attrs["solar_CF_gap_fill"] = (
+                        "NaN above ~60°N filled by OLS regression on ERA5 annual-mean "
+                        "ssrd and t2m (land pixels only, regionmask land_110)"
+                    )
+                else:
+                    print(
+                        "  -> Skipping solar_CF fill: ssrd or t2m climatology not found "
+                        f"for tile {tile_str}. Run --with-climatology ssrd t2m first."
+                    )
+
                 ds_abundance.to_netcdf(abundance_file, engine="netcdf4")
             else:
                 print(f"\n--- Abundance already exists, skipping Tile: {tile_str} ---")
@@ -202,6 +229,7 @@ def main():
                     result = get_variable_climatology(tile, item, start_year, end_year)
 
                 if result is not None:
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
                     result.to_netcdf(out_path)
 
         gc.collect()
