@@ -51,11 +51,6 @@ ERA5_ZARR_URL = (
     "reanalysis-era5-single-levels-v0.zarr"
 )
 
-ERA5_LAND_ZARR_URL = (
-    f"https://edh:{era5_token}"
-    "@api.earthdatahub.destine.eu/era5/era5-land-daily-utc-v1.zarr"
-)
-
 PATHS = {
     "solar_atlas": "resources/user/PVOUT.tif",
     "wind_atlas": "resources/user/cf_iec2_cog_100m.tif",

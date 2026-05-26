@@ -110,7 +110,12 @@ def main():
         os.remove(tmp_path)
 
     for tile in tiles:
-        client.restart()
+        try:
+            client.restart()
+        except Exception as e:
+            print(f"  [WARN] Client restart failed ({e}), recreating client...")
+            client.close()
+            client = Client(n_workers=4, threads_per_worker=1, memory_limit="24GB")
         # Simplified naming: minx_miny_maxx_maxy
         tile_str = "_".join(map(str, tile))
 
@@ -165,7 +170,9 @@ def main():
                         f"\n--- Computing long-duration storage for Tile: {tile_str} ---"
                     )
                     ds_lds = compute_lds_for_tile(
-                        tile, start_year, end_year,
+                        tile,
+                        start_year,
+                        end_year,
                         clim_dir=output_dir / "climatology",
                     )
                     ds_lds.to_netcdf(tmp_path, engine="netcdf4")

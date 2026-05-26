@@ -12,46 +12,27 @@ VAR_CONFIG = {
     "t2m": {"daily_sum": False, "long_name": "2m Temperature"},
 }
 
-# ERA5-Land daily variables (no hourly aggregation needed)
-LAND_VAR_CONFIG = {
-    # "t2m": {"long_name": "2m Temperature"},
-    "asn": {"long_name": "Snow Albedo"},
-}
-
 
 def get_variable_climatology(
     tile: Tuple[float, ...], var: str, start_year: int, end_year: int
 ):
     """
-    Computes daily climatology (365 days, noleap) for an ERA5 or ERA5-Land variable.
-
-    ERA5-Land variables (t2m, asn) are loaded from ERA5_LAND_ZARR_URL at daily
-    resolution; no hourly aggregation is applied.  All other variables use the
-    ERA5 single-levels store with the aggregation rules in VAR_CONFIG.
+    Computes daily climatology (365 days) for a specific ERA5 variable.
     """
-    if var in LAND_VAR_CONFIG:
-        da = load_era5_daily_land(ERA5_LAND_ZARR_URL, var, tile, start_year, end_year)
-        long_name = LAND_VAR_CONFIG[var]["long_name"]
-    else:
-        config = VAR_CONFIG.get(var, {"daily_sum": False, "long_name": var})
-        da = load_era5_variable(
-            ERA5_ZARR_URL,
-            var,
-            tile,
-            start_year,
-            end_year,
-            daily_sum=config["daily_sum"],
-        )
-        if da is None:
-            return None
-        long_name = config["long_name"]
+    config = VAR_CONFIG.get(var, {"daily_sum": False, "long_name": var})
+
+    da = load_era5_variable(
+        ERA5_ZARR_URL, var, tile, start_year, end_year, daily_sum=config["daily_sum"]
+    )
+    if da is None:
+        return None
 
     # Standardize time: remove leap days and group by day of year
     da = da.convert_calendar("noleap", dim="valid_time")
     clim = da.groupby("valid_time.dayofyear").mean("valid_time")
 
     clim.name = f"{var}_climatology"
-    clim.attrs["long_name"] = f"Daily Mean Climatology of {long_name}"
+    clim.attrs["long_name"] = f"Daily Mean Climatology of {config['long_name']}"
     return clim.compute()
 
 
