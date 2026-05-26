@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 from typing import Tuple, List
-from src.geo_processing import load_era5_variable, load_era5_daily_land
+from src.geo_processing import load_era5_variable
 from src.config import ERA5_ZARR_URL
 
 # ERA5 single-levels: aggregation rules
