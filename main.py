@@ -123,7 +123,7 @@ def main():
         if args.with_abundance:
             abundance_file = output_dir / f"abundance/abundance_{tile_str}.nc"
             if not abundance_file.exists():
-                print("  -> Resampling Atlas...")
+                print(f"  -> Resampling Atlas for Tile: {tile_str} ---")
                 ds_abundance = resample_atlas(
                     tile, PATHS, resolution=REFERENCE_RESOLUTION
                 )
