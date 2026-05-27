@@ -109,7 +109,13 @@ def compute_demand_settlement_proximity(
     )
 
     # Log transform demand proximity to make it less skewed and comparable
-    return settlement, weighted_buffered.rename("demand_proximity_weighted_buffered")
+    return settlement.sel(
+        longitude=slice(minx, maxx - 1e-3), latitude=slice(maxy, miny + 1e-3)
+    ), weighted_buffered.sel(
+        longitude=slice(minx, maxx - 1e-3), latitude=slice(maxy, miny + 1e-3)
+    ).rename(
+        "demand_proximity_weighted_buffered"
+    )
     # return xr.Dataset(
     #     {
     #         "settlement_m2": settlement,
