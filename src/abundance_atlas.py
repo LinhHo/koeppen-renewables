@@ -1,5 +1,7 @@
 """
 Resample atlas data to reference grid
+NO fill NA values here - just resampling and clipping to the tile bounds.
+Fillna is done separately in make_figures to preserve the original data.
 """
 
 import xarray as xr
