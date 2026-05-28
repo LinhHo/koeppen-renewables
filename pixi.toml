@@ -6,6 +6,10 @@ platforms = ["linux-64", "osx-arm64"]
 version = "0.1.0"
 
 [tasks]
+# Figure scripts
+figures-zones = "python make_figures/figures_renewable_zones.py"
+figures-countries = "python make_figures/figures_by_country.py"
+figures-fill-solar = "python make_figures/fillNA_solar_CF.py"
 # Run a specific tile for testing
 test-NL = "python main.py --bounds 0 40 10 55"
 test-zero = "python main.py --bounds -10 -10 10 10"
@@ -36,6 +40,5 @@ jupyterlab = ">=4.5.2,<5"
 seaborn = ">=0.13.2,<0.14"
 regionmask = ">=0.13.0,<0.14"
 flox = ">=0.11.1,<0.12"
+pycountry = ">=24.6.1,<25"
 
-# pycountry <<<<<, to add
-# esda

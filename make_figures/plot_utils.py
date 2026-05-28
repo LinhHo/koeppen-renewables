@@ -97,7 +97,7 @@ class ClassificationSpec:
     use_solar_land, use_wind_land
         Whether the land label should include a solar/wind abundance character.
     use_storage
-        If True, add a reliability character (R/U) derived from storage duration.
+        If True, add a reliability character (R/V) derived from storage duration.
     use_demand
         If True, add a demand character (h/l) derived from demand proximity.
     add_offshore
@@ -236,45 +236,45 @@ GROUPS_ABUNDANCE_OFFSHORE_WIND: dict = {
 
 GROUPS_DETAILED: dict = {
     "A": ["#3cb44b", "- Abundance both", ["HHRh", "MMRh"]],
-    "A_l": [light("#3cb44b"), "", ["HHRl", "MMRl"]],
-    "A_v": ["#688818", "", ["HHUh", "MMUh"]],
-    "A_vl": [light("#688818"), "", ["HHUl", "MMUl"]],
+    "A_L": [light("#3cb44b"), "", ["HHRl", "MMRl"]],
+    "A_V": ["#688818", "", ["HHVh", "MMVh"]],
+    "A_VL": [light("#688818"), "", ["HHVl", "MMVl"]],
     # Wind dominant: high/mid wind + low solar
     "W": ["#0099FF", "- Wind", ["HLRh", "MLRh"]],
-    "W_l": [light("#0099FF"), "", ["HLRl", "MLRl"]],
-    "W_v": ["#2e86a8", "", ["HLUh", "MLUh"]],
-    "W_vl": [light("#2e86a8"), "", ["HLUl", "MLUl"]],
+    "W_L": [light("#0099FF"), "", ["HLRl", "MLRl"]],
+    "W_V": ["#2e86a8", "", ["HLVh", "MLVh"]],
+    "W_VL": [light("#2e86a8"), "", ["HLVl", "MLVl"]],
     # Wind favourable: high wind + medium solar
     "Ws": ["#00FFEE", "- Wind solar", ["HMRh"]],
-    "Ws_l": [light("#00FFEE"), "", ["HMRl"]],
-    "Ws_v": ["#22B8AE", "", ["HMUh"]],
-    "Ws_vl": [light("#22B8AE"), "", ["HMUl"]],
+    "Ws_L": [light("#00FFEE"), "", ["HMRl"]],
+    "Ws_V": ["#22B8AE", "", ["HMVh"]],
+    "Ws_VL": [light("#22B8AE"), "", ["HMVl"]],
     # Solar dominant: low wind + high/mid solar
     "S": ["#ff8819", "- Solar", ["LHRh", "LMRh"]],
-    "S_l": [light("#ff8819"), "", ["LHRl", "LMRl"]],
-    "S_v": ["#b25c0c", "", ["LHUh", "LMUh"]],
-    "S_vl": [light("#b25c0c"), "", ["LHUl", "LMUl"]],
+    "S_L": [light("#ff8819"), "", ["LHRl", "LMRl"]],
+    "S_V": ["#b25c0c", "", ["LHVh", "LMVh"]],
+    "S_VL": [light("#b25c0c"), "", ["LHVl", "LMVl"]],
     # Solar favourable: medium wind + high solar
     "Sw": ["#fff319", "- Solar wind", ["MHRh"]],
-    "Sw_l": [light("#fff319"), "", ["MHRl"]],
-    "Sw_v": ["#b2aa13", "", ["MHUh"]],
-    "Sw_vl": [light("#b2aa13"), "", ["MHUl"]],
+    "Sw_L": [light("#fff319"), "", ["MHRl"]],
+    "Sw_V": ["#b2aa13", "", ["MHVh"]],
+    "Sw_VL": [light("#b2aa13"), "", ["MHVl"]],
     "P": ["#FF0000", "- Poor", ["LLxh"]],
-    "P_l": ["#BFBFBF", "", ["LLxl"]],
+    "P_L": ["#BFBFBF", "", ["LLxl"]],
     # Offshore wind — H and M share colour; H=3, M=2 in resource calc
-    # Offshore label: wind(HML) + storage(RU) + demand(hl)  [already wind-first, unchanged]
-    "o": ["#EA6565", "", ["offshore_LRh", "offshore_LUh"]],
-    "o_l": ["#CECDCD", "", ["offshore_LRl", "offshore_LUl"]],
+    # Offshore label: wind(HML) + storage(RV) + demand(hl)  [already wind-first, unchanged]
+    "o": ["#EA6565", "", ["offshore_LRh", "offshore_LVh"]],
+    "o_L": ["#CECDCD", "", ["offshore_LRl", "offshore_LVl"]],
     "O": ["#4a53ff", "- Offshore", ["offshore_HRh", "offshore_MRh"]],
-    "O_l": ["#a6a3fe", "", ["offshore_HRl", "offshore_MRl"]],
-    "O_v": ["#8f13fb", "", ["offshore_HUh", "offshore_MUh"]],
-    "O_vl": ["#d3a1ff", "", ["offshore_HUl", "offshore_MUl"]],
+    "O_L": ["#a6a3fe", "", ["offshore_HRl", "offshore_MRl"]],
+    "O_V": ["#8f13fb", "", ["offshore_HVh", "offshore_MVh"]],
+    "O_VL": ["#d3a1ff", "", ["offshore_HVl", "offshore_MVl"]],
 }
 
 
 # --- full (offshore uses wind + solar, 4-char labels everywhere) -----------
-# Land label:    wind(HML) + solar(HML) + storage(RU) + demand(hl)
-# Offshore label: wind(HML) + solar(HML) + storage(RU) + demand(hl)
+# Land label:    wind(HML) + solar(HML) + storage(RV) + demand(hl)
+# Offshore label: wind(HML) + solar(HML) + storage(RV) + demand(hl)
 # e.g. "HLRh" = high wind, low solar, reliable, high demand  → Wind zone
 #      "LHRh" = low wind,  high solar, reliable, high demand  → Solar zone
 
@@ -284,20 +284,20 @@ GROUPS_FULL: dict = {
         "- Abundance both",
         ["HHRh", "MMRh", "offshore_HHRh", "offshore_MMRh"],
     ],
-    "A_l": [
+    "A_L": [
         light(LAND_COLORS["A"]),
         "low demand",
         ["HHRl", "MMRl", "offshore_HHRl", "offshore_MMRl"],
     ],
-    "A_v": [
+    "A_V": [
         dirty(LAND_COLORS["A"]),
         "variable",
-        ["HHUh", "MMUh", "offshore_HHUh", "offshore_MMUh"],
+        ["HHVh", "MMVh", "offshore_HHVh", "offshore_MMVh"],
     ],
-    "A_vl": [
+    "A_VL": [
         light(dirty(LAND_COLORS["A"])),
         "",
-        ["HHUl", "MMUl", "offshore_HHUl", "offshore_MMUl"],
+        ["HHVl", "MMVl", "offshore_HHVl", "offshore_MMVl"],
     ],
     # Wind dominant: high/mid wind + low solar
     "W": [
@@ -305,54 +305,54 @@ GROUPS_FULL: dict = {
         "- Wind",
         ["HLRh", "MLRh", "offshore_HLRh", "offshore_MLRh"],
     ],
-    "W_l": [
+    "W_L": [
         light(LAND_COLORS["W"]),
         "",
         ["HLRl", "MLRl", "offshore_HLRl", "offshore_MLRl"],
     ],
-    "W_v": [
+    "W_V": [
         dirty(LAND_COLORS["W"]),
         "",
-        ["HLUh", "MLUh", "offshore_HLUh", "offshore_MLUh"],
+        ["HLVh", "MLVh", "offshore_HLVh", "offshore_MLVh"],
     ],
-    "W_vl": [
+    "W_VL": [
         light(dirty(LAND_COLORS["W"])),
         "",
-        ["HLUl", "MLUl", "offshore_HLUl", "offshore_MLUl"],
+        ["HLVl", "MLVl", "offshore_HLVl", "offshore_MLVl"],
     ],
     # Wind favourable: high wind + medium solar
     "Ws": [LAND_COLORS["Ws"], "- Wind solar", ["HMRh", "offshore_HMRh"]],
-    "Ws_l": [light(LAND_COLORS["Ws"]), "", ["HMRl", "offshore_HMRl"]],
-    "Ws_v": [dirty(LAND_COLORS["Ws"]), "", ["HMUh", "offshore_HMUh"]],
-    "Ws_vl": [light(dirty(LAND_COLORS["Ws"])), "", ["HMUl", "offshore_HMUl"]],
+    "Ws_L": [light(LAND_COLORS["Ws"]), "", ["HMRl", "offshore_HMRl"]],
+    "Ws_V": [dirty(LAND_COLORS["Ws"]), "", ["HMVh", "offshore_HMVh"]],
+    "Ws_VL": [light(dirty(LAND_COLORS["Ws"])), "", ["HMVl", "offshore_HMVl"]],
     # Solar dominant: low wind + high/mid solar
     "S": [
         LAND_COLORS["S"],
         "- Solar",
         ["LHRh", "LMRh", "offshore_LHRh", "offshore_LMRh"],
     ],
-    "S_l": [
+    "S_L": [
         light(LAND_COLORS["S"]),
         "",
         ["LHRl", "LMRl", "offshore_LHRl", "offshore_LMRl"],
     ],
-    "S_v": [
+    "S_V": [
         dirty(LAND_COLORS["S"]),
         "",
-        ["LHUh", "LMUh", "offshore_LHUh", "offshore_LMUh"],
+        ["LHVh", "LMVh", "offshore_LHVh", "offshore_LMVh"],
     ],
-    "S_vl": [
+    "S_VL": [
         light(dirty(LAND_COLORS["S"])),
         "",
-        ["LHUl", "LMUl", "offshore_LHUl", "offshore_LMUl"],
+        ["LHVl", "LMVl", "offshore_LHVl", "offshore_LMVl"],
     ],
     # Solar favourable: medium wind + high solar
     "Sw": [LAND_COLORS["Sw"], "- Solar wind", ["MHRh", "offshore_MHRh"]],
-    "Sw_l": [light(LAND_COLORS["Sw"]), "", ["MHRl", "offshore_MHRl"]],
-    "Sw_v": [dirty(LAND_COLORS["Sw"]), "", ["MHUh", "offshore_HMUh"]],
-    "Sw_vl": [light(dirty(LAND_COLORS["Sw"])), "", ["MHUl", "offshore_MHUl"]],
-    "P": ["#FF0000", "- Poor", ["LLRh", "offshore_LLRh", "LLUh", "offshore_LLUh"]],
-    "P_l": [LAND_COLORS["P"], "", ["LLRl", "offshore_LLRl", "LLUl", "offshore_LLUl"]],
+    "Sw_L": [light(LAND_COLORS["Sw"]), "", ["MHRl", "offshore_MHRl"]],
+    "Sw_V": [dirty(LAND_COLORS["Sw"]), "", ["MHVh", "offshore_MHVh"]],
+    "Sw_VL": [light(dirty(LAND_COLORS["Sw"])), "", ["MHVl", "offshore_MHVl"]],
+    "P": ["#FF0000", "- Poor", ["LLRh", "offshore_LLRh", "LLVh", "offshore_LLVh"]],
+    "P_L": [LAND_COLORS["P"], "", ["LLRl", "offshore_LLRl", "LLVl", "offshore_LLVl"]],
 }
 
 
