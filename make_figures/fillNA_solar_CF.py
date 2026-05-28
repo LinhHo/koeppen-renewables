@@ -36,8 +36,9 @@ from plot_utils import mask_land
 PROCESSED_PATTERN = str(RESULTS_DIR / "automatic/abundance/abundance_*.nc")
 SSRD_PATTERN = str(RESULTS_DIR / "automatic/climatology/ssrd/*.nc")
 T2M_PATTERN = str(RESULTS_DIR / "automatic/climatology/t2m/*.nc")
-OUTPUT_PATH = RESULTS_DIR / "post_processed_data/processed_solar_CF_filled.nc"
-
+OUTPUT_PATH = RESULTS_DIR / "post_processed_data/"
+OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_PATH / "processed_solar_CF_filled.nc"
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 
@@ -45,10 +46,14 @@ print(f"Loading processed dataset ...")
 ds = xr.open_mfdataset(PROCESSED_PATTERN, combine="by_coords", engine="netcdf4")
 
 print("Loading ssrd climatology ...")
-ssrd_clim = xr.open_mfdataset(SSRD_PATTERN, combine="by_coords", engine="netcdf4")["ssrd_climatology"]
+ssrd_clim = xr.open_mfdataset(SSRD_PATTERN, combine="by_coords", engine="netcdf4")[
+    "ssrd_climatology"
+]
 
 print("Loading t2m climatology ...")
-t2m_clim = xr.open_mfdataset(T2M_PATTERN, combine="by_coords", engine="netcdf4")["t2m_climatology"]
+t2m_clim = xr.open_mfdataset(T2M_PATTERN, combine="by_coords", engine="netcdf4")[
+    "t2m_climatology"
+]
 
 
 # ── Prepare predictors ─────────────────────────────────────────────────────────
@@ -58,8 +63,12 @@ solar = ds["solar_CF"].compute()
 is_land = mask_land(ds["wind_CF"].compute())
 
 # Annual means from 365-day climatology
-ssrd_mean = ssrd_clim.mean("dayofyear").interp(latitude=solar.latitude, longitude=solar.longitude)
-t2m_mean = t2m_clim.mean("dayofyear").interp(latitude=solar.latitude, longitude=solar.longitude)
+ssrd_mean = ssrd_clim.mean("dayofyear").interp(
+    latitude=solar.latitude, longitude=solar.longitude
+)
+t2m_mean = t2m_clim.mean("dayofyear").interp(
+    latitude=solar.latitude, longitude=solar.longitude
+)
 
 # Flatten to 1-D
 s = solar.values.ravel()
@@ -72,7 +81,9 @@ land = is_land.values.ravel()
 
 fit_mask = land & np.isfinite(s) & np.isfinite(p1) & np.isfinite(p2)
 if fit_mask.sum() == 0:
-    raise ValueError("No valid land pixels to fit — check ssrd/t2m alignment with solar_CF grid.")
+    raise ValueError(
+        "No valid land pixels to fit — check ssrd/t2m alignment with solar_CF grid."
+    )
 
 X_fit = np.column_stack([p1[fit_mask], p2[fit_mask], np.ones(fit_mask.sum())])
 coeffs, _, _, _ = np.linalg.lstsq(X_fit, s[fit_mask], rcond=None)
@@ -113,6 +124,6 @@ ds_out.attrs["solar_CF_gap_fill"] = (
     "(land pixels only, regionmask natural_earth land_110)"
 )
 
-print(f"Saving to {OUTPUT_PATH} ...")
-ds_out.to_netcdf(OUTPUT_PATH, engine="netcdf4")
+print(f"Saving to {OUTPUT_FILE} ...")
+ds_out.to_netcdf(OUTPUT_FILE, engine="netcdf4")
 print("Done.")
