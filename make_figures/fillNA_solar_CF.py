@@ -29,14 +29,14 @@ import xarray as xr
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = REPO_ROOT / "results"
-sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from plot_utils import mask_land
 
-PROCESSED_PATTERN = str(RESULTS_DIR / "automatic/processed/processed_*.nc")
+PROCESSED_PATTERN = str(RESULTS_DIR / "automatic/abundance/abundance_*.nc")
 SSRD_PATTERN = str(RESULTS_DIR / "automatic/climatology/ssrd/*.nc")
 T2M_PATTERN = str(RESULTS_DIR / "automatic/climatology/t2m/*.nc")
-OUTPUT_PATH = RESULTS_DIR / "automatic/processed_solar_CF_filled.nc"
+OUTPUT_PATH = RESULTS_DIR / "post_processed_data/processed_solar_CF_filled.nc"
 
 
 # ── Load data ─────────────────────────────────────────────────────────────────
