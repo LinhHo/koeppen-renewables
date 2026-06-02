@@ -425,172 +425,172 @@ def plot_zones_map(
     return fig, ax
 
 
-def _draw_zones_table_legend(
-    fig: plt.Figure,
-    groups: dict,
-    thresholds: dict,
-) -> None:
-    """Draw a structured table legend below the map axes.
+# def _draw_zones_table_legend(
+#     fig: plt.Figure,
+#     groups: dict,
+#     thresholds: dict,
+# ) -> None:
+#     """Draw a structured table legend below the map axes.
 
-    Shows zone names, CF thresholds, and colour swatches for each sub-zone
-    variant (base, _L, _V, _VL).  Replaces the flat patch legend for fig1.
-    Assumes plot_zones_map already called plt.subplots_adjust(bottom=0.25),
-    so the bottom 25% of the figure is free.
-    """
-    s = thresholds
-    wl  = s["wind_onshore"]["low"]
-    wh  = s["wind_onshore"]["high"]
-    sl  = s["solar"]["low"]
-    sh  = s["solar"]["high"]
-    ofl = s["wind_offshore"]["low"]
-    n_days = s["storage"]["land"]
-    d_thr  = 0.5
+#     Shows zone names, CF thresholds, and colour swatches for each sub-zone
+#     variant (base, _L, _V, _VL).  Replaces the flat patch legend for fig1.
+#     Assumes plot_zones_map already called plt.subplots_adjust(bottom=0.25),
+#     so the bottom 25% of the figure is free.
+#     """
+#     s = thresholds
+#     wl  = s["wind_onshore"]["low"]
+#     wh  = s["wind_onshore"]["high"]
+#     sl  = s["solar"]["low"]
+#     sh  = s["solar"]["high"]
+#     ofl = s["wind_offshore"]["low"]
+#     n_days = s["storage"]["land"]
+#     d_thr  = 0.5
 
-    onshore_rows = [
-        ("A",  "A: abundant-both",     f"≥ {wl}",       f"≥ {sl}"),
-        ("W",  "W: wind-dominant",     f"≥ {wl}",       f"< {sl}"),
-        ("Ws", "Ws: wind-favourable",  f"≥ {wh}",       f"{sl}–{sh}"),
-        ("S",  "S: solar-dominant",    f"< {wl}",            f"≥ {sl}"),
-        ("Sw", "Sw: solar-favourable", f"{wl}–{wh}",         f"≥ {sh}"),
-        ("P",  "P: poor-both",         f"< {wl}",            f"< {sl}"),
-    ]
-    offshore_rows = [
-        ("O", "O: high-mid", f"≥ {ofl} m/s"),
-        ("o", "o: low",      f"< {ofl} m/s"),
-    ]
+#     onshore_rows = [
+#         ("A",  "A: abundant-both",     f"≥ {wl}",       f"≥ {sl}"),
+#         ("W",  "W: wind-dominant",     f"≥ {wl}",       f"< {sl}"),
+#         ("Ws", "Ws: wind-favourable",  f"≥ {wh}",       f"{sl}–{sh}"),
+#         ("S",  "S: solar-dominant",    f"< {wl}",            f"≥ {sl}"),
+#         ("Sw", "Sw: solar-favourable", f"{wl}–{wh}",         f"≥ {sh}"),
+#         ("P",  "P: poor-both",         f"< {wl}",            f"< {sl}"),
+#     ]
+#     offshore_rows = [
+#         ("O", "O: high-mid", f"≥ {ofl} m/s"),
+#         ("o", "o: low",      f"< {ofl} m/s"),
+#     ]
 
-    def _color(base, sfx=""):
-        key = base + sfx
-        return mcolors.to_rgb(groups[key][0]) if key in groups else None
+#     def _color(base, sfx=""):
+#         key = base + sfx
+#         return mcolors.to_rgb(groups[key][0]) if key in groups else None
 
-    def _dark(rgb):
-        return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] < 0.45
+#     def _dark(rgb):
+#         return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] < 0.45
 
-    # Table axes fills the reserved bottom area
-    ax = fig.add_axes([0.04, 0.015, 0.92, 0.215])
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis("off")
+#     # Table axes fills the reserved bottom area
+#     ax = fig.add_axes([0.04, 0.015, 0.92, 0.215])
+#     ax.set_xlim(0, 1)
+#     ax.set_ylim(0, 1)
+#     ax.axis("off")
 
-    NROWS = 10   # 2 header + 6 onshore + 2 offshore
-    rh = 1.0 / NROWS
+#     NROWS = 10   # 2 header + 6 onshore + 2 offshore
+#     rh = 1.0 / NROWS
 
-    # Column x-start positions (fraction of table axes width)
-    C = dict(
-        sec=0.000,   # rotated section label
-        nm =0.030,   # zone name
-        wnd=0.245,   # Wind CF text
-        sol=0.355,   # Solar CF text
-        s0 =0.460,   # swatch 1 — base
-        s1 =0.563,   # swatch 2 — _L
-        s2 =0.666,   # swatch 3 — _V
-        s3 =0.769,   # swatch 4 — _VL
-        sfx=0.880,   # suffix explanation
-    )
-    SW  = 0.095   # swatch column width
-    SXS = [C["s0"], C["s1"], C["s2"], C["s3"]]
+#     # Column x-start positions (fraction of table axes width)
+#     C = dict(
+#         sec=0.000,   # rotated section label
+#         nm =0.030,   # zone name
+#         wnd=0.245,   # Wind CF text
+#         sol=0.355,   # Solar CF text
+#         s0 =0.460,   # swatch 1 — base
+#         s1 =0.563,   # swatch 2 — _L
+#         s2 =0.666,   # swatch 3 — _V
+#         s3 =0.769,   # swatch 4 — _VL
+#         sfx=0.880,   # suffix explanation
+#     )
+#     SW  = 0.095   # swatch column width
+#     SXS = [C["s0"], C["s1"], C["s2"], C["s3"]]
 
-    # ── Header rows ──────────────────────────────────────────────────────────
-    h0y = 1.0 - rh           # row-0 bottom edge
-    h1y = h0y - rh           # row-1 bottom edge
-    h0m = h0y + rh * 0.60    # row-0 vertical midpoint
-    h1m = h1y + rh * 0.60    # row-1 vertical midpoint
+#     # ── Header rows ──────────────────────────────────────────────────────────
+#     h0y = 1.0 - rh           # row-0 bottom edge
+#     h1y = h0y - rh           # row-1 bottom edge
+#     h0m = h0y + rh * 0.60    # row-0 vertical midpoint
+#     h1m = h1y + rh * 0.60    # row-1 vertical midpoint
 
-    ax.text(C["nm"] + 0.005, h0m, "Renewable zone",
-            ha="left", va="center", fontsize=8, fontweight="bold")
-    ax.text(C["wnd"] + 0.075, h0m, "Threshold",
-            ha="center", va="center", fontsize=8, fontweight="bold")
-    ax.text(C["sfx"], h0m,
-            f"Suffix   _V: temporally variable (storage ≥ {n_days} d)",
-            ha="left", va="center", fontsize=6.5)
+#     ax.text(C["nm"] + 0.005, h0m, "Renewable zone",
+#             ha="left", va="center", fontsize=8, fontweight="bold")
+#     ax.text(C["wnd"] + 0.075, h0m, "Threshold",
+#             ha="center", va="center", fontsize=8, fontweight="bold")
+#     ax.text(C["sfx"], h0m,
+#             f"Suffix   _V: temporally variable (storage ≥ {n_days} d)",
+#             ha="left", va="center", fontsize=6.5)
 
-    ax.text(C["wnd"] + 0.04, h1m, "Wind CF",
-            ha="center", va="center", fontsize=6.5, fontstyle="italic")
-    ax.text(C["sol"] + 0.05, h1m, "Solar CF",
-            ha="center", va="center", fontsize=6.5, fontstyle="italic")
-    ax.text(C["sfx"], h1m,
-            f"          _L: low demand (demand proxy ≤ {d_thr})",
-            ha="left", va="center", fontsize=6.5)
-    for j, lbl in enumerate(["(base)", "_L", "_V", "_VL"]):
-        ax.text(SXS[j] + SW / 2, h1m, lbl,
-                ha="center", va="center", fontsize=5.5)
+#     ax.text(C["wnd"] + 0.04, h1m, "Wind CF",
+#             ha="center", va="center", fontsize=6.5, fontstyle="italic")
+#     ax.text(C["sol"] + 0.05, h1m, "Solar CF",
+#             ha="center", va="center", fontsize=6.5, fontstyle="italic")
+#     ax.text(C["sfx"], h1m,
+#             f"          _L: low demand (demand proxy ≤ {d_thr})",
+#             ha="left", va="center", fontsize=6.5)
+#     for j, lbl in enumerate(["(base)", "_L", "_V", "_VL"]):
+#         ax.text(SXS[j] + SW / 2, h1m, lbl,
+#                 ha="center", va="center", fontsize=5.5)
 
-    # Header separator
-    ax.plot([0, C["sfx"]], [h1y, h1y], "k-", lw=0.8)
+#     # Header separator
+#     ax.plot([0, C["sfx"]], [h1y, h1y], "k-", lw=0.8)
 
-    # ── Onshore rows ─────────────────────────────────────────────────────────
-    n_on  = len(onshore_rows)
-    on_bot = h1y - n_on * rh
+#     # ── Onshore rows ─────────────────────────────────────────────────────────
+#     n_on  = len(onshore_rows)
+#     on_bot = h1y - n_on * rh
 
-    ax.text(C["sec"] + 0.015, (h1y + on_bot) / 2, "Onshore",
-            ha="center", va="center", fontsize=6.5, fontweight="bold", rotation=90)
+#     ax.text(C["sec"] + 0.015, (h1y + on_bot) / 2, "Onshore",
+#             ha="center", va="center", fontsize=6.5, fontweight="bold", rotation=90)
 
-    for i, (base, name, wt, st) in enumerate(onshore_rows):
-        ry  = h1y - (i + 1) * rh
-        rm  = ry + rh * 0.55
-        ph  = rh * 0.65
-        pw  = SW * 0.82
+#     for i, (base, name, wt, st) in enumerate(onshore_rows):
+#         ry  = h1y - (i + 1) * rh
+#         rm  = ry + rh * 0.55
+#         ph  = rh * 0.65
+#         pw  = SW * 0.82
 
-        ax.text(C["nm"] + 0.005, rm, name, ha="left",   va="center", fontsize=7)
-        ax.text(C["wnd"] + 0.04, rm, wt,  ha="center",  va="center", fontsize=6.5)
-        ax.text(C["sol"] + 0.05, rm, st,  ha="center",  va="center", fontsize=6.5)
+#         ax.text(C["nm"] + 0.005, rm, name, ha="left",   va="center", fontsize=7)
+#         ax.text(C["wnd"] + 0.04, rm, wt,  ha="center",  va="center", fontsize=6.5)
+#         ax.text(C["sol"] + 0.05, rm, st,  ha="center",  va="center", fontsize=6.5)
 
-        for j, sfx in enumerate(["", "_L", "_V", "_VL"]):
-            c = _color(base, sfx)
-            if c is None:
-                continue
-            ax.add_patch(plt.Rectangle(
-                (SXS[j] + (SW - pw) / 2, ry + rh * 0.175), pw, ph,
-                facecolor=c, edgecolor="none",
-            ))
-            ax.text(SXS[j] + SW / 2, ry + rh * 0.175 + ph / 2, base + sfx,
-                    ha="center", va="center", fontsize=4.8,
-                    color="white" if _dark(c) else "#333333")
+#         for j, sfx in enumerate(["", "_L", "_V", "_VL"]):
+#             c = _color(base, sfx)
+#             if c is None:
+#                 continue
+#             ax.add_patch(plt.Rectangle(
+#                 (SXS[j] + (SW - pw) / 2, ry + rh * 0.175), pw, ph,
+#                 facecolor=c, edgecolor="none",
+#             ))
+#             ax.text(SXS[j] + SW / 2, ry + rh * 0.175 + ph / 2, base + sfx,
+#                     ha="center", va="center", fontsize=4.8,
+#                     color="white" if _dark(c) else "#333333")
 
-        if i < n_on - 1:
-            ax.plot([C["nm"], C["sfx"]], [ry, ry], "-", color="#cccccc", lw=0.3)
+#         if i < n_on - 1:
+#             ax.plot([C["nm"], C["sfx"]], [ry, ry], "-", color="#cccccc", lw=0.3)
 
-    # ── Offshore section ─────────────────────────────────────────────────────
-    ax.plot([0, C["sfx"]], [on_bot, on_bot], "k-", lw=0.8)
+#     # ── Offshore section ─────────────────────────────────────────────────────
+#     ax.plot([0, C["sfx"]], [on_bot, on_bot], "k-", lw=0.8)
 
-    n_off   = len(offshore_rows)
-    off_bot = on_bot - n_off * rh
+#     n_off   = len(offshore_rows)
+#     off_bot = on_bot - n_off * rh
 
-    ax.text(C["sec"] + 0.015, (on_bot + off_bot) / 2, "Offshore",
-            ha="center", va="center", fontsize=6.5, fontweight="bold", rotation=90)
+#     ax.text(C["sec"] + 0.015, (on_bot + off_bot) / 2, "Offshore",
+#             ha="center", va="center", fontsize=6.5, fontweight="bold", rotation=90)
 
-    # "100-m wind speed" label spans wind + solar columns
-    ax.text(C["wnd"] + 0.075, on_bot - rh * 0.22, "100-m wind speed",
-            ha="center", va="top", fontsize=6, fontstyle="italic")
+#     # "100-m wind speed" label spans wind + solar columns
+#     ax.text(C["wnd"] + 0.075, on_bot - rh * 0.22, "100-m wind speed",
+#             ha="center", va="top", fontsize=6, fontstyle="italic")
 
-    for i, (base, name, wt) in enumerate(offshore_rows):
-        ry  = on_bot - (i + 1) * rh
-        rm  = ry + rh * 0.55
-        ph  = rh * 0.65
-        pw  = SW * 0.82
+#     for i, (base, name, wt) in enumerate(offshore_rows):
+#         ry  = on_bot - (i + 1) * rh
+#         rm  = ry + rh * 0.55
+#         ph  = rh * 0.65
+#         pw  = SW * 0.82
 
-        ax.text(C["nm"] + 0.005, rm, name,           ha="left",  va="center", fontsize=7)
-        ax.text(C["wnd"] + 0.075, rm, wt,            ha="center",va="center", fontsize=6.5)
+#         ax.text(C["nm"] + 0.005, rm, name,           ha="left",  va="center", fontsize=7)
+#         ax.text(C["wnd"] + 0.075, rm, wt,            ha="center",va="center", fontsize=6.5)
 
-        for j, sfx in enumerate(["", "_L", "_V", "_VL"]):
-            c = _color(base, sfx)
-            if c is None:
-                continue
-            ax.add_patch(plt.Rectangle(
-                (SXS[j] + (SW - pw) / 2, ry + rh * 0.175), pw, ph,
-                facecolor=c, edgecolor="none",
-            ))
-            ax.text(SXS[j] + SW / 2, ry + rh * 0.175 + ph / 2, base + sfx,
-                    ha="center", va="center", fontsize=4.8,
-                    color="white" if _dark(c) else "#333333")
+#         for j, sfx in enumerate(["", "_L", "_V", "_VL"]):
+#             c = _color(base, sfx)
+#             if c is None:
+#                 continue
+#             ax.add_patch(plt.Rectangle(
+#                 (SXS[j] + (SW - pw) / 2, ry + rh * 0.175), pw, ph,
+#                 facecolor=c, edgecolor="none",
+#             ))
+#             ax.text(SXS[j] + SW / 2, ry + rh * 0.175 + ph / 2, base + sfx,
+#                     ha="center", va="center", fontsize=4.8,
+#                     color="white" if _dark(c) else "#333333")
 
-    # Outer border around table content
-    ax.add_patch(plt.Rectangle(
-        (0, off_bot), C["sfx"], 1.0 - off_bot,
-        facecolor="none", edgecolor="black", lw=0.8,
-    ))
-    # Vertical divider between section label column and the rest
-    ax.plot([C["nm"], C["nm"]], [off_bot, 1.0], "k-", lw=0.5)
+#     # Outer border around table content
+#     ax.add_patch(plt.Rectangle(
+#         (0, off_bot), C["sfx"], 1.0 - off_bot,
+#         facecolor="none", edgecolor="black", lw=0.8,
+#     ))
+#     # Vertical divider between section label column and the rest
+#     ax.plot([C["nm"], C["nm"]], [off_bot, 1.0], "k-", lw=0.5)
 
 
 def plot_abundance_storage_combined(
@@ -1246,6 +1246,41 @@ def plot_scatter_elevation_precipitation(
             fontsize=8,
         )
     plt.tight_layout()
+
+    # ── Inset map: P-zone cells (poor both, high demand) highlighted in red ──
+    pos = ax.get_position()  # stable after tight_layout
+    iw = pos.width * 0.37
+    ih = pos.height * 0.40
+    ix = pos.x0 + pos.width * 0.05
+    iy = pos.y1 - ih - pos.height * 0  # .01
+    ax_mini = fig.add_axes([ix, iy, iw, ih], projection=ccrs.Robinson())
+
+    sub_arr = ds_grouped["zones_subgrouped"].values  # object array (str | None)
+    rgb_mini = np.ones((*sub_arr.shape, 3), dtype=float)  # white background
+    rgb_mini[sub_arr == "P"] = mcolors.to_rgb("#FF0000")
+    rgb_mini = np.flipud(rgb_mini)  # lat stored N→S; flip to S at bottom for imshow
+
+    lats = ds_grouped.latitude.values
+    lons = ds_grouped.longitude.values
+    data_extent = [
+        float(lons.min()),
+        float(lons.max()),
+        float(lats.min()),
+        float(lats.max()),
+    ]
+
+    ax_mini.set_global()
+    ax_mini.imshow(
+        rgb_mini,
+        origin="lower",
+        extent=data_extent,
+        transform=ccrs.PlateCarree(),
+        interpolation="nearest",
+    )
+    ax_mini.coastlines(linewidth=0.3, color="#666666")
+    ax_mini.set_facecolor("white")
+    # ─────────────────────────────────────────────────────────────────────────
+
     if out_path:
         fig.savefig(out_path, dpi=300, bbox_inches="tight")
         print(f"Saved: {out_path}")
@@ -1640,31 +1675,29 @@ class DataBundle:
             log.info("Loading abundance from %s", abundance_pattern)
 
             demand_pattern = str(RESULTS_DIR / "automatic/demand/demand_*.nc")
-            ws100_pattern = str(RESULTS_DIR / "automatic/climatology/ws100/*.nc")
-            ssrd_pattern = str(RESULTS_DIR / "automatic/climatology/ssrd/*.nc")
+            clim_dir = RESULTS_DIR / "automatic/climatology"
 
             log.info("Loading demand from %s", demand_pattern)
             ds_dm = xr.open_mfdataset(demand_pattern, combine="by_coords")[
                 ["demand_proximity_weighted_buffered"]
             ]
 
-            log.info("Loading ws100 climatology from %s", ws100_pattern)
-            wind_clim = (
-                xr.open_mfdataset(ws100_pattern, combine="by_coords")["ws100"]
-                .mean("dayofyear")
-                .rename("wind_climatology")
-            )
+            # Load pre-computed annual-mean climatologies (written by storage.py).
+            # Raise a clear error if they are missing so the user knows what to run first.
+            clim_datasets = []
+            for var, new_name in (("ws100", "wind_climatology"), ("ssrd", "solar_climatology")):
+                cache = clim_dir / f"{var}_annual_mean.nc"
+                if not cache.exists():
+                    raise FileNotFoundError(
+                        f"{cache} not found. "
+                        f"Run the storage pipeline (main.py / pixi run global) first "
+                        f"to generate the climatology annual-mean cache files."
+                    )
+                log.info("Loading %s annual mean from %s", var, cache)
+                da = xr.open_dataset(str(cache))[var].rename(new_name)
+                clim_datasets.append(da.to_dataset())
 
-            log.info("Loading ssrd climatology from %s", ssrd_pattern)
-            solar_clim = (
-                xr.open_mfdataset(ssrd_pattern, combine="by_coords")["ssrd_climatology"]
-                .mean("dayofyear")
-                .rename("solar_climatology")
-            )
-
-            self._ds_processed = xr.merge(
-                [ds_ab, ds_dm, wind_clim.to_dataset(), solar_clim.to_dataset()]
-            )
+            self._ds_processed = xr.merge([ds_ab, ds_dm, *clim_datasets])
             log_ds_summary(
                 self._ds_processed,
                 "ds_processed",
@@ -1970,6 +2003,9 @@ def _out(name: str, fmt: str) -> str:
     return str(FIG_DIR / f"{name}.{fmt}")
 
 
+from plot_utils import draw_zones_table_legend
+
+
 def fig_detailed_zones_map(data: DataBundle, fmt: str) -> None:
     """Fig 1 -- Koppen-style renewable zones (main text, detailed scheme)."""
     out = _out("fig1_renewable_zones_detailed", fmt)
@@ -1981,7 +2017,7 @@ def fig_detailed_zones_map(data: DataBundle, fmt: str) -> None:
         plot_legend=False,
         title="Renewable zones — main classification (offshore: wind only)",
     )
-    _draw_zones_table_legend(fig, GROUPS_DETAILED, FIXED_THRESHOLDS)
+    draw_zones_table_legend(fig, GROUPS_DETAILED, FIXED_THRESHOLDS)
     fig.savefig(out, dpi=300, bbox_inches="tight")
     print(f"Saved: {out}")
 

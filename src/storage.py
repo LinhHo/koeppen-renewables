@@ -27,6 +27,34 @@ log = logging.getLogger(__name__)
 ALPHA_VALUES = np.round(np.arange(0.0, 1.0 + 1e-9, 0.1), decimals=1)
 
 
+def _clim_annual_mean(clim_dir: Path, var: str) -> xr.DataArray:
+    """Return the annual-mean climatology for *var*, using a cached file when available.
+
+    Cache location: ``clim_dir/{var}_annual_mean.nc``.
+    On first call the mean is computed from ``clim_dir/{var}/*.nc``
+    (variable ``{var}_climatology``, averaged over dayofyear) and saved there.
+    Subsequent calls load the cache directly, skipping the mfdataset read.
+    """
+    cache = Path(clim_dir) / f"{var}_annual_mean.nc"
+    if cache.exists():
+        log.debug("Loading cached %s annual mean from %s", var, cache)
+        return xr.open_dataset(str(cache))[var]
+
+    files = sorted((Path(clim_dir) / var).glob("*.nc"))
+    if not files:
+        raise FileNotFoundError(f"No .nc files found in {Path(clim_dir) / var}")
+
+    log.info("Computing annual mean for %s (%d files) → %s", var, len(files), cache)
+    da = (
+        xr.open_mfdataset(files, combine="by_coords", engine="netcdf4")[f"{var}"]
+        .mean("dayofyear")
+        .compute()
+    )
+    da.name = var
+    da.to_netcdf(str(cache))
+    return da
+
+
 def _peak_energy_deficit_cyclic(
     cum_imbalance: xr.DataArray, time_dim: str = "valid_time"
 ) -> xr.DataArray:
@@ -131,27 +159,15 @@ def compute_lds_for_tile(
     )
 
     # ── 2. Climatological normalization values ────────────────────────────────
-    clim_files = sorted(Path(clim_dir).glob("climatology_*.nc"))
-    if not clim_files:
-        raise FileNotFoundError(f"No climatology_*.nc files found in {clim_dir}")
-
-    clim = xr.open_mfdataset(clim_files, engine="netcdf4", combine="by_coords")
-    # Mean over all days of year → (latitude, longitude) normalization scalar
-    clim_w_mean = clim["ws100"].mean(dim="dayofyear").compute()
-    clim_s_mean = clim["ssrd"].mean(dim="dayofyear").compute()
-
-    # Align to ERA5 tile grid; both should be on identical grids (same source)
-    clim_w_mean = clim_w_mean.sel(
+    # Load (or compute+cache) the annual mean for each variable, then align
+    # to the ERA5 tile grid and mask polar-night / missing cells.
+    clim_mean = xr.Dataset(
+        {var: _clim_annual_mean(clim_dir, var) for var in ("ws100", "ssrd")}
+    )
+    clim_mean = clim_mean.sel(
         latitude=wind_raw.latitude, longitude=wind_raw.longitude, method="nearest"
     )
-    clim_s_mean = clim_s_mean.sel(
-        latitude=solar_raw.latitude, longitude=solar_raw.longitude, method="nearest"
-    )
-
-    # Zero or negative climatology (polar night, no-data cells) → NaN
-    # Division by these cells will propagate NaN cleanly through the deficit calc.
-    clim_w_mean = clim_w_mean.where(clim_w_mean > 0)
-    clim_s_mean = clim_s_mean.where(clim_s_mean > 0)
+    clim_mean = clim_mean.where(clim_mean > 0)
 
     # ── 3. Per-year deficit, vectorised over alpha ────────────────────────────
     alpha_da = xr.DataArray(alpha_values.astype("float32"), dims=["alpha"])
@@ -171,8 +187,8 @@ def compute_lds_for_tile(
             )
 
         # Normalize by climatological annual mean (fillna(0) → no generation where missing)
-        w_norm = (wind_w / clim_w_mean).fillna(0.0)
-        s_norm = (solar_w / clim_s_mean).fillna(0.0)
+        w_norm = (wind_w / clim_mean["ws100"]).fillna(0.0)
+        s_norm = (solar_w / clim_mean["ssrd"]).fillna(0.0)
 
         # G: (alpha, valid_time, latitude, longitude) via xarray broadcasting
         G = alpha_da * w_norm + (1.0 - alpha_da) * s_norm
