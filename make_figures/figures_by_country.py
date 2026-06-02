@@ -16,7 +16,7 @@ Also reads:
 
 Run:
   python make_figures/figures_by_country.py
-  python make_figures/figures_by_country.py --only fig5 fig6
+  python make_figures/figures_by_country.py --only fig5
 """
 
 from __future__ import annotations
@@ -628,6 +628,7 @@ def plot_combined_analysis(
     )
     for _, row in to_label.iterrows():
         from plot_utils import dirty
+
         colour = dirty(cluster_map[row["cluster"]][0])
         ax_scatter.text(
             row["resource_demand_corr"] + 0.01,
@@ -767,223 +768,223 @@ def to_iso3_robust(code: str) -> Optional[str]:
         return None
 
 
-def plot_country_clusters_3d(
-    df: pd.DataFrame,
-    df_centroids: pd.DataFrame,
-    cluster_map: dict,
-    *,
-    list_cnt_to_plot: Optional[Sequence[str]] = None,
-    fig_size: tuple = (900, 900),
-    out_path: Optional[str] = None,
-    camera_eye: tuple = (1.6, 1.6, 1.1),
-    show: bool = False,
-):
-    """Interactive 3D scatter of country clusters.
+# def plot_country_clusters_3d(
+#     df: pd.DataFrame,
+#     df_centroids: pd.DataFrame,
+#     cluster_map: dict,
+#     *,
+#     list_cnt_to_plot: Optional[Sequence[str]] = None,
+#     fig_size: tuple = (900, 900),
+#     out_path: Optional[str] = None,
+#     camera_eye: tuple = (1.6, 1.6, 1.1),
+#     show: bool = False,
+# ):
+#     """Interactive 3D scatter of country clusters.
 
-    Axes
-    ----
-    * X — Average resource availability
-    * Y — Spatial correlation (resource vs demand)
-    * Z — Average storage requirement
+#     Axes
+#     ----
+#     * X — Average resource availability
+#     * Y — Spatial correlation (resource vs demand)
+#     * Z — Average storage requirement
 
-    Parameters
-    ----------
-    df
-        Per-country dataframe with ``avg_resource``, ``avg_storage``,
-        ``resource_demand_corr``, ``cluster``, ``iso3``, ``country_name``.
-    df_centroids
-        Cluster centroids dataframe (output of :func:`cluster_countries`).
-    cluster_map
-        ``{cluster_id: [hex_colour, label]}`` — same structure used by
-        :func:`plot_combined_analysis`. Drives marker colours and the legend.
-    list_cnt_to_plot
-        ISO-3 codes whose names should be drawn next to their marker (as in
-        Fig 5a). If ``None``, no labels are drawn.
-    fig_size
-        ``(width, height)`` in pixels.
-    out_path
-        If given, save a static image using Kaleido. ``.pdf`` / ``.png`` /
-        ``.svg`` are all supported. The HTML version is also written next to
-        it for interactive exploration.
-    camera_eye
-        Initial camera position — tweak if the default view crops labels.
-    show
-        Whether to call ``fig.show()``. Defaults to ``False`` so the script
-        can run headless; set ``True`` to display in a notebook.
-    """
-    import plotly.graph_objects as go
+#     Parameters
+#     ----------
+#     df
+#         Per-country dataframe with ``avg_resource``, ``avg_storage``,
+#         ``resource_demand_corr``, ``cluster``, ``iso3``, ``country_name``.
+#     df_centroids
+#         Cluster centroids dataframe (output of :func:`cluster_countries`).
+#     cluster_map
+#         ``{cluster_id: [hex_colour, label]}`` — same structure used by
+#         :func:`plot_combined_analysis`. Drives marker colours and the legend.
+#     list_cnt_to_plot
+#         ISO-3 codes whose names should be drawn next to their marker (as in
+#         Fig 5a). If ``None``, no labels are drawn.
+#     fig_size
+#         ``(width, height)`` in pixels.
+#     out_path
+#         If given, save a static image using Kaleido. ``.pdf`` / ``.png`` /
+#         ``.svg`` are all supported. The HTML version is also written next to
+#         it for interactive exploration.
+#     camera_eye
+#         Initial camera position — tweak if the default view crops labels.
+#     show
+#         Whether to call ``fig.show()``. Defaults to ``False`` so the script
+#         can run headless; set ``True`` to display in a notebook.
+#     """
+#     import plotly.graph_objects as go
 
-    df = df.copy()
-    df_centroids = df_centroids.copy()
+#     df = df.copy()
+#     df_centroids = df_centroids.copy()
 
-    cluster_ids = sorted(cluster_map.keys())
+#     cluster_ids = sorted(cluster_map.keys())
 
-    fig = go.Figure()
+#     fig = go.Figure()
 
-    # One trace per cluster — cluster markers first, labels drawn last so
-    # they are never occluded by centroid X markers in the depth sort.
-    for cid in cluster_ids:
-        colour, label = cluster_map[cid]
-        sub = df[df["cluster"] == cid]
-        if sub.empty:
-            continue
-        fig.add_trace(
-            go.Scatter3d(
-                x=sub["avg_resource"],
-                y=sub["resource_demand_corr"],
-                z=sub["avg_storage"],
-                mode="markers",
-                marker=dict(
-                    size=9,
-                    color=colour,
-                    opacity=0.80,
-                    line=dict(width=0.8, color="white"),
-                ),
-                name=str(label),
-                text=sub["iso3"],
-                hovertemplate=(
-                    "<b>%{text}</b><br>"
-                    "Cluster: " + str(label) + "<br>"
-                    "Resource: %{x:.3f}<br>"
-                    "Correlation: %{y:.3f}<br>"
-                    "Storage: %{z:.3f}<extra></extra>"
-                ),
-            )
-        )
+#     # One trace per cluster — cluster markers first, labels drawn last so
+#     # they are never occluded by centroid X markers in the depth sort.
+#     for cid in cluster_ids:
+#         colour, label = cluster_map[cid]
+#         sub = df[df["cluster"] == cid]
+#         if sub.empty:
+#             continue
+#         fig.add_trace(
+#             go.Scatter3d(
+#                 x=sub["avg_resource"],
+#                 y=sub["resource_demand_corr"],
+#                 z=sub["avg_storage"],
+#                 mode="markers",
+#                 marker=dict(
+#                     size=9,
+#                     color=colour,
+#                     opacity=0.80,
+#                     line=dict(width=0.8, color="white"),
+#                 ),
+#                 name=str(label),
+#                 text=sub["iso3"],
+#                 hovertemplate=(
+#                     "<b>%{text}</b><br>"
+#                     "Cluster: " + str(label) + "<br>"
+#                     "Resource: %{x:.3f}<br>"
+#                     "Correlation: %{y:.3f}<br>"
+#                     "Storage: %{z:.3f}<extra></extra>"
+#                 ),
+#             )
+#         )
 
-    # Centroids: one 'X' marker per cluster, drawn before labels.
-    fig.add_trace(
-        go.Scatter3d(
-            x=df_centroids["avg_resource"],
-            y=df_centroids["resource_demand_corr"],
-            z=df_centroids["avg_storage"],
-            mode="markers",
-            marker=dict(
-                symbol="x",
-                size=12,
-                color=[cluster_map[i][0] for i in range(len(df_centroids))],
-                line=dict(width=4, color="black"),
-            ),
-            name="Cluster centroids",
-            hoverinfo="skip",
-        )
-    )
+#     # Centroids: one 'X' marker per cluster, drawn before labels.
+#     fig.add_trace(
+#         go.Scatter3d(
+#             x=df_centroids["avg_resource"],
+#             y=df_centroids["resource_demand_corr"],
+#             z=df_centroids["avg_storage"],
+#             mode="markers",
+#             marker=dict(
+#                 symbol="x",
+#                 size=12,
+#                 color=[cluster_map[i][0] for i in range(len(df_centroids))],
+#                 line=dict(width=4, color="black"),
+#             ),
+#             name="Cluster centroids",
+#             hoverinfo="skip",
+#         )
+#     )
 
-    # Named-country labels — added LAST so they render on top of all markers.
-    if list_cnt_to_plot:
-        to_label = df[df["iso3"].isin(list_cnt_to_plot)]
-        if not to_label.empty:
-            names = to_label.get("country_name", to_label["iso3"])
-            fig.add_trace(
-                go.Scatter3d(
-                    x=to_label["avg_resource"],
-                    y=to_label["resource_demand_corr"],
-                    z=to_label["avg_storage"],
-                    # markers+text: tiny invisible anchor forces correct depth
-                    # sort so the text is never hidden behind centroid X marks.
-                    mode="markers+text",
-                    marker=dict(size=1, opacity=0, color="rgba(0,0,0,0)"),
-                    text=names,
-                    textposition="top center",
-                    textfont=dict(
-                        size=12, color="black", family="Arial Black, Arial, sans-serif"
-                    ),
-                    showlegend=False,
-                    hoverinfo="skip",
-                )
-            )
+#     # Named-country labels — added LAST so they render on top of all markers.
+#     if list_cnt_to_plot:
+#         to_label = df[df["iso3"].isin(list_cnt_to_plot)]
+#         if not to_label.empty:
+#             names = to_label.get("country_name", to_label["iso3"])
+#             fig.add_trace(
+#                 go.Scatter3d(
+#                     x=to_label["avg_resource"],
+#                     y=to_label["resource_demand_corr"],
+#                     z=to_label["avg_storage"],
+#                     # markers+text: tiny invisible anchor forces correct depth
+#                     # sort so the text is never hidden behind centroid X marks.
+#                     mode="markers+text",
+#                     marker=dict(size=1, opacity=0, color="rgba(0,0,0,0)"),
+#                     text=names,
+#                     textposition="top center",
+#                     textfont=dict(
+#                         size=12, color="black", family="Arial Black, Arial, sans-serif"
+#                     ),
+#                     showlegend=False,
+#                     hoverinfo="skip",
+#                 )
+#             )
 
-    # Scene occupies the left ~82 % of the canvas; legend sits tight beside it.
-    fig.update_layout(
-        title=dict(
-            text=(
-                "<b>Global Renewable Strategy Clusters (3D view)</b><br>"
-                "<sup>Storage, resource–demand correlation, and resource availability</sup>"
-            ),
-            x=0.04,
-            y=0.96,
-            yanchor="top",
-            font=dict(size=15),
-        ),
-        width=fig_size[0],
-        height=fig_size[1],
-        scene=dict(
-            domain=dict(x=[0.0, 0.82], y=[0.0, 1.0]),
-            xaxis=dict(
-                title=dict(text="Avg resource availability", font=dict(size=13)),
-                tickfont=dict(size=11),
-            ),
-            yaxis=dict(
-                title=dict(
-                    text="Spatial correlation<br>(resource vs demand)",
-                    font=dict(size=13),
-                ),
-                tickfont=dict(size=11),
-            ),
-            zaxis=dict(
-                title=dict(text="Avg storage [norm.]", font=dict(size=13)),
-                tickfont=dict(size=11),
-            ),
-            camera=dict(
-                up=dict(x=0, y=0, z=1),
-                center=dict(x=0, y=0, z=0),
-                eye=dict(x=camera_eye[0], y=camera_eye[1], z=camera_eye[2]),
-            ),
-            aspectmode="cube",
-        ),
-        template="plotly_white",
-        legend=dict(
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=0.6,
-            bgcolor="rgba(255,255,255,0.7)",
-            bordercolor="lightgrey",
-            borderwidth=1,
-            font=dict(size=12),
-        ),
-        margin=dict(l=10, r=10, b=10, t=55),
-    )
+#     # Scene occupies the left ~82 % of the canvas; legend sits tight beside it.
+#     fig.update_layout(
+#         title=dict(
+#             text=(
+#                 "<b>Global Renewable Strategy Clusters (3D view)</b><br>"
+#                 "<sup>Storage, resource–demand correlation, and resource availability</sup>"
+#             ),
+#             x=0.04,
+#             y=0.96,
+#             yanchor="top",
+#             font=dict(size=15),
+#         ),
+#         width=fig_size[0],
+#         height=fig_size[1],
+#         scene=dict(
+#             domain=dict(x=[0.0, 0.82], y=[0.0, 1.0]),
+#             xaxis=dict(
+#                 title=dict(text="Avg resource availability", font=dict(size=13)),
+#                 tickfont=dict(size=11),
+#             ),
+#             yaxis=dict(
+#                 title=dict(
+#                     text="Spatial correlation<br>(resource vs demand)",
+#                     font=dict(size=13),
+#                 ),
+#                 tickfont=dict(size=11),
+#             ),
+#             zaxis=dict(
+#                 title=dict(text="Avg storage [norm.]", font=dict(size=13)),
+#                 tickfont=dict(size=11),
+#             ),
+#             camera=dict(
+#                 up=dict(x=0, y=0, z=1),
+#                 center=dict(x=0, y=0, z=0),
+#                 eye=dict(x=camera_eye[0], y=camera_eye[1], z=camera_eye[2]),
+#             ),
+#             aspectmode="cube",
+#         ),
+#         template="plotly_white",
+#         legend=dict(
+#             yanchor="top",
+#             y=1,
+#             xanchor="left",
+#             x=0.6,
+#             bgcolor="rgba(255,255,255,0.7)",
+#             bordercolor="lightgrey",
+#             borderwidth=1,
+#             font=dict(size=12),
+#         ),
+#         margin=dict(l=10, r=10, b=10, t=55),
+#     )
 
-    if out_path:
-        out_path = Path(out_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+#     if out_path:
+#         out_path = Path(out_path)
+#         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Static export — requires kaleido.  Check availability before
-        # attempting so we emit a clear warning rather than a cryptic error,
-        # and always fall back to writing the interactive HTML.
-        _kaleido_ok = False
-        try:
-            import kaleido  # noqa: F401  (existence check only)
+#         # Static export — requires kaleido.  Check availability before
+#         # attempting so we emit a clear warning rather than a cryptic error,
+#         # and always fall back to writing the interactive HTML.
+#         _kaleido_ok = False
+#         try:
+#             import kaleido  # noqa: F401  (existence check only)
 
-            _kaleido_ok = True
-        except ImportError:
-            log.warning(
-                "kaleido is not installed — static 3D figure (%s) cannot be "
-                "saved as %s.  Install kaleido (e.g. `pip install kaleido`) "
-                "to enable static export.  The interactive HTML will still be "
-                "written.",
-                out_path.suffix.lstrip(".").upper(),
-                out_path,
-            )
+#             _kaleido_ok = True
+#         except ImportError:
+#             log.warning(
+#                 "kaleido is not installed — static 3D figure (%s) cannot be "
+#                 "saved as %s.  Install kaleido (e.g. `pip install kaleido`) "
+#                 "to enable static export.  The interactive HTML will still be "
+#                 "written.",
+#                 out_path.suffix.lstrip(".").upper(),
+#                 out_path,
+#             )
 
-        if _kaleido_ok:
-            try:
-                fig.write_image(
-                    str(out_path), width=fig_size[0], height=fig_size[1], scale=2
-                )
-                log.info("Saved 3D cluster figure: %s", out_path)
-            except Exception as exc:
-                log.warning("Static 3D export failed for %s: %s", out_path, exc)
+#         if _kaleido_ok:
+#             try:
+#                 fig.write_image(
+#                     str(out_path), width=fig_size[0], height=fig_size[1], scale=2
+#                 )
+#                 log.info("Saved 3D cluster figure: %s", out_path)
+#             except Exception as exc:
+#                 log.warning("Static 3D export failed for %s: %s", out_path, exc)
 
-        html_path = out_path.with_suffix(".html")
-        fig.write_html(str(html_path))
-        log.info("Saved interactive 3D cluster figure: %s", html_path)
+#         html_path = out_path.with_suffix(".html")
+#         fig.write_html(str(html_path))
+#         log.info("Saved interactive 3D cluster figure: %s", html_path)
 
-    if show:
-        fig.show()
+#     if show:
+#         fig.show()
 
-    return fig
+#     return fig
 
 
 def plot_offshore_shift_density(
@@ -1389,7 +1390,7 @@ class DataBundle:
 def _build_clusters(data: DataBundle, n: int = 4):
     """Cluster countries and build the label/config dict."""
     df = data.df_corr_results.copy()
-    all_metric_path = FIG_DIR / "country_all_metrics.csv"
+    all_metric_path = POST_PROCESSED_DIR / "country_all_metrics.csv"
     df.to_csv(str(all_metric_path))
     log.info("Country all metrics saved: %s", all_metric_path)
 
@@ -1430,7 +1431,7 @@ def _build_clusters(data: DataBundle, n: int = 4):
         naming_rules=CLUSTER_NAMING_RULES,
         large_threshold=400,
     )
-    csv_path = FIG_DIR / "cluster_summary.csv"
+    csv_path = POST_PROCESSED_DIR / "cluster_summary.csv"
     cluster_info.to_csv(str(csv_path))
     log.info("Cluster summary saved: %s", csv_path)
 
@@ -1461,17 +1462,17 @@ def fig_clusters_combined(data: DataBundle, fmt: str) -> None:
     )
 
 
-def fig_clusters_3d(data: DataBundle, fmt: str) -> None:
-    """Fig 6 -- 3D scatter of country clusters."""
-    df_clustered, centroids, cluster_config = _build_clusters(data, n=4)
-    plot_country_clusters_3d(
-        df_clustered,
-        centroids,
-        cluster_map=cluster_config,
-        list_cnt_to_plot=LIST_CNT_HIGHLIGHT,
-        fig_size=(1400, 900),
-        out_path=_out("fig6_clusters_3d", fmt),
-    )
+# def fig_clusters_3d(data: DataBundle, fmt: str) -> None:
+#     """Fig 6 -- 3D scatter of country clusters."""
+#     df_clustered, centroids, cluster_config = _build_clusters(data, n=4)
+#     plot_country_clusters_3d(
+#         df_clustered,
+#         centroids,
+#         cluster_map=cluster_config,
+#         list_cnt_to_plot=LIST_CNT_HIGHLIGHT,
+#         fig_size=(1400, 900),
+#         out_path=_out("fig6_clusters_3d", fmt),
+#     )
 
 
 def fig_spatial_correlation_map(data: DataBundle, fmt: str) -> None:
@@ -1499,7 +1500,7 @@ def fig_offshore_wind_shift(data: DataBundle, fmt: str) -> None:
     df_land = data.df_corr_land.copy()
     df_combined = data.df_corr_results.copy()
 
-    land_metric_path = FIG_DIR / "country_land_only_metrics.csv"
+    land_metric_path = POST_PROCESSED_DIR / "country_land_only_metrics.csv"
     df_land.to_csv(str(land_metric_path))
     log.info("Land-only metrics saved: %s", land_metric_path)
 
@@ -1556,7 +1557,7 @@ def fig_zones_by_cluster(data: DataBundle, fmt: str) -> None:
 
 FIGURES: dict[str, Callable[[DataBundle, str], None]] = {
     "fig5": fig_clusters_combined,
-    "fig6": fig_clusters_3d,
+    # "fig6": fig_clusters_3d,
     "figS_corr_map": fig_spatial_correlation_map,
     "figS_corr_hist": fig_correlation_histogram,
     "figS_offshore_shift": fig_offshore_wind_shift,

@@ -382,6 +382,7 @@ def plot_zones_map(
     unmatched = unique_labels - matched
     if unmatched:
         warnings.warn("Unmatched zone labels: " + ", ".join(sorted(unmatched)))
+    rgb = np.flipud(rgb)
 
     fig = plt.figure(figsize=figsize)
     ax = plt.axes(projection=projection)
@@ -482,6 +483,7 @@ def plot_abundance_storage_combined(
     rgb_arr = np.full((*zones.shape, 3), np.nan, dtype=float)
     for lbl, col in label_to_colour.items():
         rgb_arr[zones == lbl] = col
+    rgb = np.flipud(rgb)
 
     ax_a.imshow(rgb_arr, origin="lower", extent=list(extent), transform=data_proj)
     ax_a.coastlines()
@@ -801,6 +803,9 @@ def get_base_and_subgroup(
             fill=0,
             dtype="uint8",
         )
+        # Flip if the dataset's latitude axis is ascending (south-up)
+        if lat[0] < lat[-1]:
+            raster = raster[::-1, :]
         ds_out["koppen_code"] = xr.DataArray(
             raster, coords=ds_out["zones"].coords, dims=ds_out["zones"].dims
         )
@@ -1448,15 +1453,27 @@ class DataBundle:
     # -- primary inputs --------------------------------------------------
     @property
     def ds_processed(self) -> xr.Dataset:
-        """Merge abundance, demand, and annual-mean climatology into one dataset."""
+        """Merge abundance, demand, and annual-mean climatology into one dataset.
+        If the post-processed abundance with solar CF filled NA dataset is available, use that for abundance;
+        """
         if self._ds_processed is None:
-            abundance_pattern = str(RESULTS_DIR / "automatic/abundance/abundance_*.nc")
+            if (
+                RESULTS_DIR / "post_processed_data/processed_solar_CF_filled.nc"
+            ).exists():
+                abundance_pattern = str(
+                    RESULTS_DIR / "post_processed_data/processed_solar_CF_filled.nc"
+                )
+                ds_ab = xr.open_dataset(abundance_pattern)
+            else:
+                abundance_pattern = str(
+                    RESULTS_DIR / "automatic/abundance/abundance_*.nc"
+                )
+                ds_ab = xr.open_mfdataset(abundance_pattern, combine="by_coords")
+            log.info("Loading abundance from %s", abundance_pattern)
+
             demand_pattern = str(RESULTS_DIR / "automatic/demand/demand_*.nc")
             ws100_pattern = str(RESULTS_DIR / "automatic/climatology/ws100/*.nc")
             ssrd_pattern = str(RESULTS_DIR / "automatic/climatology/ssrd/*.nc")
-
-            log.info("Loading abundance from %s", abundance_pattern)
-            ds_ab = xr.open_mfdataset(abundance_pattern, combine="by_coords")
 
             log.info("Loading demand from %s", demand_pattern)
             ds_dm = xr.open_mfdataset(demand_pattern, combine="by_coords")[
@@ -1508,8 +1525,8 @@ class DataBundle:
     @property
     def ds_mean(self):
         if self._ds_mean is None:
-            sys.path.insert(0, str(BASE_DIR.parent / "src"))
-            from storage import aggregate_lds
+            # sys.path.insert(0, str(BASE_DIR.parent / "src"))
+            from plot_utils import aggregate_lds
 
             storage_path = str(RESULTS_DIR / "automatic/storage/")
             log.info("Aggregating storage (metric=mean) from %s", storage_path)
@@ -1771,7 +1788,7 @@ class DataBundle:
         for fname, ds in paths.items():
             out = POST_PROCESSED_DIR / fname
             log.info("Saving %s ...", out)
-            ds.to_netcdf(str(out), engine="netcdf4")
+            ds.to_netcdf(str(out), engine="netcdf4", mode="w")
         log.info("Post-processed data saved to %s", POST_PROCESSED_DIR)
 
 

@@ -81,7 +81,25 @@ python main.py --bounds 0 0 10 10 --with-climatology ssrd tp
 python main.py --global --with-climatology ws100 ssrd tp complementarity
 ```
 
-To generate all figures, run
+To fill NA in solar CF data with linear regression using 2m temperature and solar shortwave radiation downward (ssrd)
+```
+pixi run fillNA-solar
+```
+
+To create figures with gridded data, e.g., renewable zones maps. Can choose format png or pdf
+
+# All zone figures (fig1–fig4, figS*) + save data for Step 2
+```
+pixi run figures-zones --format png
+```
+
+To create figures for analyses by country
+```
+pixi run figures-countries --format pdf
+```
+
+
+<!-- To generate all figures, run
 
 ```bash
 python src/make_figures.py                   # all figures, PDF (default)
@@ -89,4 +107,4 @@ python src/make_figures.py --format png      # PNG instead
 python src/make_figures.py --only fig1 fig5  # just these figures
 python src/make_figures.py --continue-on-error  # don't abort on one failure
 ```
-
+ -->

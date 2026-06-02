@@ -27,7 +27,9 @@ log = logging.getLogger(__name__)
 ALPHA_VALUES = np.round(np.arange(0.0, 1.0 + 1e-9, 0.1), decimals=1)
 
 
-def _peak_energy_deficit_cyclic(cum_imbalance: xr.DataArray, time_dim: str = "valid_time") -> xr.DataArray:
+def _peak_energy_deficit_cyclic(
+    cum_imbalance: xr.DataArray, time_dim: str = "valid_time"
+) -> xr.DataArray:
     """
     Peak energy storage deficit via cyclic extension (Antonini et al. 2024).
 
@@ -191,9 +193,7 @@ def compute_lds_for_tile(
 
     # Concatenate → (year, alpha, latitude, longitude),
     # then transpose to canonical (alpha, year, latitude, longitude).
-    deficit_full = xr.concat(yearly_results, dim="year").transpose(
-        "alpha", "year", ...
-    )
+    deficit_full = xr.concat(yearly_results, dim="year").transpose("alpha", "year", ...)
 
     return xr.Dataset(
         {"energy_deficit_days": deficit_full.astype("float32")},
@@ -206,133 +206,133 @@ def compute_lds_for_tile(
     )
 
 
-###
-## HELPER TO PLOT STORAGE — aggregate_lds
-###
+# ###
+# ## HELPER TO PLOT STORAGE — aggregate_lds
+# ###
 
 
-def aggregate_lds(
-    lds_dir: str | Path,
-    metric: str = "mean",
-    fixed_alpha: float | None = None,
-) -> xr.Dataset:
-    """
-    Load all LDS tile files, aggregate across years, return (lat, lon) dataset.
+# def aggregate_lds(
+#     lds_dir: str | Path,
+#     metric: str = "mean",
+#     fixed_alpha: float | None = None,
+# ) -> xr.Dataset:
+#     """
+#     Load all LDS tile files, aggregate across years, return (lat, lon) dataset.
 
-    Parameters
-    ----------
-    lds_dir : str or Path
-        Directory containing lds_*.nc files produced by storage.py.
-    metric : {"mean", "p99", "max"}
-        How to aggregate the per-year energy deficit across years:
-          "mean" — representative planning value
-          "p99"  — 99th-percentile, near-worst-case design value
-          "max"  — absolute worst year
-    fixed_alpha : float or None
-        If given, report the metric at this specific alpha instead of
-        finding the optimal (minimising) alpha. Must be one of the alpha
-        values stored in the files (e.g. 0.0, 0.1, ..., 1.0).
+#     Parameters
+#     ----------
+#     lds_dir : str or Path
+#         Directory containing lds_*.nc files produced by storage.py.
+#     metric : {"mean", "p99", "max"}
+#         How to aggregate the per-year energy deficit across years:
+#           "mean" — representative planning value
+#           "p99"  — 99th-percentile, near-worst-case design value
+#           "max"  — absolute worst year
+#     fixed_alpha : float or None
+#         If given, report the metric at this specific alpha instead of
+#         finding the optimal (minimising) alpha. Must be one of the alpha
+#         values stored in the files (e.g. 0.0, 0.1, ..., 1.0).
 
-    Returns
-    -------
-    xr.Dataset with dims (latitude, longitude) and variables:
-        duration_metric  float32  [days]
-            Aggregated energy deficit at the optimal (or fixed) alpha.
-        optimal_alpha    float32  [0–1]
-            Wind capacity share that minimises duration_metric.
-            Equals fixed_alpha everywhere when fixed_alpha is provided.
-    """
-    lds_dir = Path(lds_dir)
-    metric = metric.lower()
+#     Returns
+#     -------
+#     xr.Dataset with dims (latitude, longitude) and variables:
+#         duration_metric  float32  [days]
+#             Aggregated energy deficit at the optimal (or fixed) alpha.
+#         optimal_alpha    float32  [0–1]
+#             Wind capacity share that minimises duration_metric.
+#             Equals fixed_alpha everywhere when fixed_alpha is provided.
+#     """
+#     lds_dir = Path(lds_dir)
+#     metric = metric.lower()
 
-    if metric not in {"mean", "p99", "max"}:
-        raise ValueError(f"metric must be 'mean', 'p99', or 'max'; got {metric!r}")
+#     if metric not in {"mean", "p99", "max"}:
+#         raise ValueError(f"metric must be 'mean', 'p99', or 'max'; got {metric!r}")
 
-    # ── 1. Load tiles ──────────────────────────────────────────────────────
-    files = sorted(lds_dir.glob("lds_*.nc"))
-    if not files:
-        raise FileNotFoundError(f"No lds_*.nc files found in {lds_dir}")
+#     # ── 1. Load tiles ──────────────────────────────────────────────────────
+#     files = sorted(lds_dir.glob("lds_*.nc"))
+#     if not files:
+#         raise FileNotFoundError(f"No lds_*.nc files found in {lds_dir}")
 
-    print(f"Loading {len(files)} tile(s)...")
-    tile_datasets = [xr.open_dataset(f, decode_times=False) for f in files]
-    ds = (
-        tile_datasets[0]
-        if len(tile_datasets) == 1
-        else xr.combine_by_coords(tile_datasets, combine_attrs="override")
-    )
+#     print(f"Loading {len(files)} tile(s)...")
+#     tile_datasets = [xr.open_dataset(f, decode_times=False) for f in files]
+#     ds = (
+#         tile_datasets[0]
+#         if len(tile_datasets) == 1
+#         else xr.combine_by_coords(tile_datasets, combine_attrs="override")
+#     )
 
-    # (alpha, year, latitude, longitude) float32
-    eld = ds["energy_deficit_days"].astype("float32")
+#     # (alpha, year, latitude, longitude) float32
+#     eld = ds["energy_deficit_days"].astype("float32")
 
-    # ── 2. Aggregate across years ──────────────────────────────────────────
-    # skipna=True so that ocean/missing cells (all-NaN alpha slices) stay NaN
-    # rather than raising an error.
-    print(f"Aggregating across years using metric={metric!r}...")
-    if metric == "mean":
-        agg = eld.mean(dim="year", skipna=True)
-    elif metric == "p99":
-        agg = eld.quantile(0.99, dim="year", skipna=True).drop_vars("quantile")
-    elif metric == "max":
-        agg = eld.max(dim="year", skipna=True)
-    # agg shape: (alpha, latitude, longitude)
+#     # ── 2. Aggregate across years ──────────────────────────────────────────
+#     # skipna=True so that ocean/missing cells (all-NaN alpha slices) stay NaN
+#     # rather than raising an error.
+#     print(f"Aggregating across years using metric={metric!r}...")
+#     if metric == "mean":
+#         agg = eld.mean(dim="year", skipna=True)
+#     elif metric == "p99":
+#         agg = eld.quantile(0.99, dim="year", skipna=True).drop_vars("quantile")
+#     elif metric == "max":
+#         agg = eld.max(dim="year", skipna=True)
+#     # agg shape: (alpha, latitude, longitude)
 
-    # ── 3. Select alpha ────────────────────────────────────────────────────
-    if fixed_alpha is not None:
-        alpha_vals = agg.alpha.values
-        if not np.any(np.isclose(alpha_vals, fixed_alpha, atol=1e-6)):
-            raise ValueError(
-                f"fixed_alpha={fixed_alpha} not in file. "
-                f"Available: {alpha_vals.tolist()}"
-            )
-        print(f"Using fixed alpha={fixed_alpha}...")
-        agg_sel = agg.sel(alpha=fixed_alpha, method="nearest").drop_vars("alpha")
-        alpha_map = xr.full_like(agg_sel, fill_value=float(fixed_alpha))
+#     # ── 3. Select alpha ────────────────────────────────────────────────────
+#     if fixed_alpha is not None:
+#         alpha_vals = agg.alpha.values
+#         if not np.any(np.isclose(alpha_vals, fixed_alpha, atol=1e-6)):
+#             raise ValueError(
+#                 f"fixed_alpha={fixed_alpha} not in file. "
+#                 f"Available: {alpha_vals.tolist()}"
+#             )
+#         print(f"Using fixed alpha={fixed_alpha}...")
+#         agg_sel = agg.sel(alpha=fixed_alpha, method="nearest").drop_vars("alpha")
+#         alpha_map = xr.full_like(agg_sel, fill_value=float(fixed_alpha))
 
-    else:
-        # argmin over alpha; skipna keeps NaN cells as NaN instead of crashing
-        print("Finding optimal alpha (minimises duration_metric)...")
-        alpha_idx = agg.argmin(dim="alpha", skipna=True).compute()  # (lat, lon) int
+#     else:
+#         # argmin over alpha; skipna keeps NaN cells as NaN instead of crashing
+#         print("Finding optimal alpha (minimises duration_metric)...")
+#         alpha_idx = agg.argmin(dim="alpha", skipna=True).compute()  # (lat, lon) int
 
-        agg_sel = agg.isel(alpha=alpha_idx).drop_vars("alpha", errors="ignore")
+#         agg_sel = agg.isel(alpha=alpha_idx).drop_vars("alpha", errors="ignore")
 
-        alpha_vals = agg.alpha.values  # 1-D numpy
-        alpha_map = xr.DataArray(
-            alpha_vals[alpha_idx.values].astype("float32"),
-            dims=agg_sel.dims,
-            coords={k: agg_sel.coords[k] for k in agg_sel.dims},
-        )
-        # Cells that were all-NaN stay NaN in agg_sel; mirror that in alpha_map
-        alpha_map = alpha_map.where(agg_sel.notnull())
+#         alpha_vals = agg.alpha.values  # 1-D numpy
+#         alpha_map = xr.DataArray(
+#             alpha_vals[alpha_idx.values].astype("float32"),
+#             dims=agg_sel.dims,
+#             coords={k: agg_sel.coords[k] for k in agg_sel.dims},
+#         )
+#         # Cells that were all-NaN stay NaN in agg_sel; mirror that in alpha_map
+#         alpha_map = alpha_map.where(agg_sel.notnull())
 
-    # ── 4. Build output dataset ────────────────────────────────────────────
-    agg_sel = agg_sel.astype("float32")
-    alpha_map = alpha_map.astype("float32")
+#     # ── 4. Build output dataset ────────────────────────────────────────────
+#     agg_sel = agg_sel.astype("float32")
+#     alpha_map = alpha_map.astype("float32")
 
-    agg_sel.attrs = {
-        "long_name": f"Energy deficit duration ({metric} across years)",
-        "units": "days",
-        "metric": metric,
-    }
-    alpha_map.attrs = {
-        "long_name": (
-            "Fixed alpha"
-            if fixed_alpha is not None
-            else "Optimal wind capacity share (minimises duration_metric)"
-        ),
-        "units": "dimensionless",
-        "note": "alpha=1.0 pure wind | alpha=0.0 pure solar",
-    }
+#     agg_sel.attrs = {
+#         "long_name": f"Energy deficit duration ({metric} across years)",
+#         "units": "days",
+#         "metric": metric,
+#     }
+#     alpha_map.attrs = {
+#         "long_name": (
+#             "Fixed alpha"
+#             if fixed_alpha is not None
+#             else "Optimal wind capacity share (minimises duration_metric)"
+#         ),
+#         "units": "dimensionless",
+#         "note": "alpha=1.0 pure wind | alpha=0.0 pure solar",
+#     }
 
-    ds_out = xr.Dataset(
-        {"duration_metric": agg_sel, "optimal_alpha": alpha_map},
-        attrs={
-            "description": (
-                f"LDS metric aggregated from Jul-Jun windows. metric={metric}. "
-                "optimal_alpha = wind share minimising duration_metric."
-            ),
-            "source_dir": str(lds_dir),
-            "n_tiles": len(files),
-        },
-    )
-    print("Done.")
-    return ds_out
+#     ds_out = xr.Dataset(
+#         {"duration_metric": agg_sel, "optimal_alpha": alpha_map},
+#         attrs={
+#             "description": (
+#                 f"LDS metric aggregated from Jul-Jun windows. metric={metric}. "
+#                 "optimal_alpha = wind share minimising duration_metric."
+#             ),
+#             "source_dir": str(lds_dir),
+#             "n_tiles": len(files),
+#         },
+#     )
+#     print("Done.")
+#     return ds_out
