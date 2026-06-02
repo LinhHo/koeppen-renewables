@@ -425,6 +425,174 @@ def plot_zones_map(
     return fig, ax
 
 
+def _draw_zones_table_legend(
+    fig: plt.Figure,
+    groups: dict,
+    thresholds: dict,
+) -> None:
+    """Draw a structured table legend below the map axes.
+
+    Shows zone names, CF thresholds, and colour swatches for each sub-zone
+    variant (base, _L, _V, _VL).  Replaces the flat patch legend for fig1.
+    Assumes plot_zones_map already called plt.subplots_adjust(bottom=0.25),
+    so the bottom 25% of the figure is free.
+    """
+    s = thresholds
+    wl  = s["wind_onshore"]["low"]
+    wh  = s["wind_onshore"]["high"]
+    sl  = s["solar"]["low"]
+    sh  = s["solar"]["high"]
+    ofl = s["wind_offshore"]["low"]
+    n_days = s["storage"]["land"]
+    d_thr  = 0.5
+
+    onshore_rows = [
+        ("A",  "A: abundant-both",     f"≥ {wl}",       f"≥ {sl}"),
+        ("W",  "W: wind-dominant",     f"≥ {wl}",       f"< {sl}"),
+        ("Ws", "Ws: wind-favourable",  f"≥ {wh}",       f"{sl}–{sh}"),
+        ("S",  "S: solar-dominant",    f"< {wl}",            f"≥ {sl}"),
+        ("Sw", "Sw: solar-favourable", f"{wl}–{wh}",         f"≥ {sh}"),
+        ("P",  "P: poor-both",         f"< {wl}",            f"< {sl}"),
+    ]
+    offshore_rows = [
+        ("O", "O: high-mid", f"≥ {ofl} m/s"),
+        ("o", "o: low",      f"< {ofl} m/s"),
+    ]
+
+    def _color(base, sfx=""):
+        key = base + sfx
+        return mcolors.to_rgb(groups[key][0]) if key in groups else None
+
+    def _dark(rgb):
+        return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] < 0.45
+
+    # Table axes fills the reserved bottom area
+    ax = fig.add_axes([0.04, 0.015, 0.92, 0.215])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    NROWS = 10   # 2 header + 6 onshore + 2 offshore
+    rh = 1.0 / NROWS
+
+    # Column x-start positions (fraction of table axes width)
+    C = dict(
+        sec=0.000,   # rotated section label
+        nm =0.030,   # zone name
+        wnd=0.245,   # Wind CF text
+        sol=0.355,   # Solar CF text
+        s0 =0.460,   # swatch 1 — base
+        s1 =0.563,   # swatch 2 — _L
+        s2 =0.666,   # swatch 3 — _V
+        s3 =0.769,   # swatch 4 — _VL
+        sfx=0.880,   # suffix explanation
+    )
+    SW  = 0.095   # swatch column width
+    SXS = [C["s0"], C["s1"], C["s2"], C["s3"]]
+
+    # ── Header rows ──────────────────────────────────────────────────────────
+    h0y = 1.0 - rh           # row-0 bottom edge
+    h1y = h0y - rh           # row-1 bottom edge
+    h0m = h0y + rh * 0.60    # row-0 vertical midpoint
+    h1m = h1y + rh * 0.60    # row-1 vertical midpoint
+
+    ax.text(C["nm"] + 0.005, h0m, "Renewable zone",
+            ha="left", va="center", fontsize=8, fontweight="bold")
+    ax.text(C["wnd"] + 0.075, h0m, "Threshold",
+            ha="center", va="center", fontsize=8, fontweight="bold")
+    ax.text(C["sfx"], h0m,
+            f"Suffix   _V: temporally variable (storage ≥ {n_days} d)",
+            ha="left", va="center", fontsize=6.5)
+
+    ax.text(C["wnd"] + 0.04, h1m, "Wind CF",
+            ha="center", va="center", fontsize=6.5, fontstyle="italic")
+    ax.text(C["sol"] + 0.05, h1m, "Solar CF",
+            ha="center", va="center", fontsize=6.5, fontstyle="italic")
+    ax.text(C["sfx"], h1m,
+            f"          _L: low demand (demand proxy ≤ {d_thr})",
+            ha="left", va="center", fontsize=6.5)
+    for j, lbl in enumerate(["(base)", "_L", "_V", "_VL"]):
+        ax.text(SXS[j] + SW / 2, h1m, lbl,
+                ha="center", va="center", fontsize=5.5)
+
+    # Header separator
+    ax.plot([0, C["sfx"]], [h1y, h1y], "k-", lw=0.8)
+
+    # ── Onshore rows ─────────────────────────────────────────────────────────
+    n_on  = len(onshore_rows)
+    on_bot = h1y - n_on * rh
+
+    ax.text(C["sec"] + 0.015, (h1y + on_bot) / 2, "Onshore",
+            ha="center", va="center", fontsize=6.5, fontweight="bold", rotation=90)
+
+    for i, (base, name, wt, st) in enumerate(onshore_rows):
+        ry  = h1y - (i + 1) * rh
+        rm  = ry + rh * 0.55
+        ph  = rh * 0.65
+        pw  = SW * 0.82
+
+        ax.text(C["nm"] + 0.005, rm, name, ha="left",   va="center", fontsize=7)
+        ax.text(C["wnd"] + 0.04, rm, wt,  ha="center",  va="center", fontsize=6.5)
+        ax.text(C["sol"] + 0.05, rm, st,  ha="center",  va="center", fontsize=6.5)
+
+        for j, sfx in enumerate(["", "_L", "_V", "_VL"]):
+            c = _color(base, sfx)
+            if c is None:
+                continue
+            ax.add_patch(plt.Rectangle(
+                (SXS[j] + (SW - pw) / 2, ry + rh * 0.175), pw, ph,
+                facecolor=c, edgecolor="none",
+            ))
+            ax.text(SXS[j] + SW / 2, ry + rh * 0.175 + ph / 2, base + sfx,
+                    ha="center", va="center", fontsize=4.8,
+                    color="white" if _dark(c) else "#333333")
+
+        if i < n_on - 1:
+            ax.plot([C["nm"], C["sfx"]], [ry, ry], "-", color="#cccccc", lw=0.3)
+
+    # ── Offshore section ─────────────────────────────────────────────────────
+    ax.plot([0, C["sfx"]], [on_bot, on_bot], "k-", lw=0.8)
+
+    n_off   = len(offshore_rows)
+    off_bot = on_bot - n_off * rh
+
+    ax.text(C["sec"] + 0.015, (on_bot + off_bot) / 2, "Offshore",
+            ha="center", va="center", fontsize=6.5, fontweight="bold", rotation=90)
+
+    # "100-m wind speed" label spans wind + solar columns
+    ax.text(C["wnd"] + 0.075, on_bot - rh * 0.22, "100-m wind speed",
+            ha="center", va="top", fontsize=6, fontstyle="italic")
+
+    for i, (base, name, wt) in enumerate(offshore_rows):
+        ry  = on_bot - (i + 1) * rh
+        rm  = ry + rh * 0.55
+        ph  = rh * 0.65
+        pw  = SW * 0.82
+
+        ax.text(C["nm"] + 0.005, rm, name,           ha="left",  va="center", fontsize=7)
+        ax.text(C["wnd"] + 0.075, rm, wt,            ha="center",va="center", fontsize=6.5)
+
+        for j, sfx in enumerate(["", "_L", "_V", "_VL"]):
+            c = _color(base, sfx)
+            if c is None:
+                continue
+            ax.add_patch(plt.Rectangle(
+                (SXS[j] + (SW - pw) / 2, ry + rh * 0.175), pw, ph,
+                facecolor=c, edgecolor="none",
+            ))
+            ax.text(SXS[j] + SW / 2, ry + rh * 0.175 + ph / 2, base + sfx,
+                    ha="center", va="center", fontsize=4.8,
+                    color="white" if _dark(c) else "#333333")
+
+    # Outer border around table content
+    ax.add_patch(plt.Rectangle(
+        (0, off_bot), C["sfx"], 1.0 - off_bot,
+        facecolor="none", edgecolor="black", lw=0.8,
+    ))
+    # Vertical divider between section label column and the rest
+    ax.plot([C["nm"], C["nm"]], [off_bot, 1.0], "k-", lw=0.5)
+
+
 def plot_abundance_storage_combined(
     ds_abundance: xr.Dataset,
     groups_abundance: dict,
@@ -1804,21 +1972,18 @@ def _out(name: str, fmt: str) -> str:
 
 def fig_detailed_zones_map(data: DataBundle, fmt: str) -> None:
     """Fig 1 -- Koppen-style renewable zones (main text, detailed scheme)."""
-    plot_zones_map(
+    out = _out("fig1_renewable_zones_detailed", fmt)
+    fig, _ = plot_zones_map(
         data.ds_zones_detailed,
         GROUPS_DETAILED,
-        out_path=_out("fig1_renewable_zones_detailed", fmt),
-        figsize=(16, 10),
-        legend_anchor=(0.5, -0.24),
-        legend_ncol=7,
-        title=(
-            f"Renewable zones -- main classification (offshore: wind only)\n"
-            f"solar CF {FIXED_THRESHOLDS['solar']['low']}/{FIXED_THRESHOLDS['solar']['high']}, "
-            f"wind CF {FIXED_THRESHOLDS['wind_onshore']['low']}/{FIXED_THRESHOLDS['wind_onshore']['high']}, "
-            f"storage {FIXED_THRESHOLDS['storage']['land']} days, "
-            f"offshore wind {FIXED_THRESHOLDS['wind_offshore']['low']}/{FIXED_THRESHOLDS['wind_offshore']['high']} m/s"
-        ),
+        out_path=None,
+        figsize=(16, 12),
+        plot_legend=False,
+        title="Renewable zones — main classification (offshore: wind only)",
     )
+    _draw_zones_table_legend(fig, GROUPS_DETAILED, FIXED_THRESHOLDS)
+    fig.savefig(out, dpi=300, bbox_inches="tight")
+    print(f"Saved: {out}")
 
 
 # def fig_abundance_map(data: DataBundle, fmt: str) -> None:
