@@ -164,15 +164,19 @@ def compute_lds_for_tile(
     clim_mean = xr.Dataset(
         {var: _clim_annual_mean(clim_dir, var) for var in ("ws100", "ssrd")}
     )
-    # ssrd daily sum climatology converted to hourly by dividing by 24, so it matches the temporal resolution of solar_raw
-    clim_mean["ssrd"] = clim_mean["ssrd"] / 24
+    # # ssrd daily sum climatology converted to hourly by dividing by 24, so it matches the temporal resolution of solar_raw
+    # clim_mean["ssrd"] = clim_mean["ssrd"] * 24
     clim_mean = clim_mean.sel(
         latitude=wind_raw.latitude, longitude=wind_raw.longitude, method="nearest"
     )
     clim_mean = clim_mean.where(clim_mean > 0)
 
     # ── 3. Per-year deficit, vectorised over alpha ────────────────────────────
-    alpha_da = xr.DataArray(alpha_values.astype("float32"), dims=["alpha"])
+    alpha_da = xr.DataArray(
+        alpha_values.astype("float32"),
+        dims=["alpha"],
+        coords={"alpha": alpha_values.astype("float32")},
+    )
     window_years = list(range(start_year, end_year))
     yearly_results = []
 
