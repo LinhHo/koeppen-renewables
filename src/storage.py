@@ -164,8 +164,8 @@ def compute_lds_for_tile(
     clim_mean = xr.Dataset(
         {var: _clim_annual_mean(clim_dir, var) for var in ("ws100", "ssrd")}
     )
-    # # ssrd daily sum climatology converted to hourly by dividing by 24, so it matches the temporal resolution of solar_raw
-    # clim_mean["ssrd"] = clim_mean["ssrd"] * 24
+    # ssrd daily sum climatology converted from hourly, so it matches the temporal resolution of solar_raw
+    clim_mean["ssrd"] = clim_mean["ssrd"] * 24
     clim_mean = clim_mean.sel(
         latitude=wind_raw.latitude, longitude=wind_raw.longitude, method="nearest"
     )
